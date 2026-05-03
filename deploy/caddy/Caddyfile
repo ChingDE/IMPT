@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Caddyfile — reverse proxy for the IMPT API
+#
+# Caddy handles HTTPS automatically (Let's Encrypt).
+# No certbot, no manual certificate renewal needed.
+#
+# Install: apt install caddy -y
+# Deploy:  cp deploy/caddy/Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy
+#
+# Replace api.your-domain.com with your actual subdomain.
+# ─────────────────────────────────────────────────────────────────────────────
+
+api.your-domain.com {
+    # Forward all traffic to the FastAPI container on port 8000
+    reverse_proxy localhost:8000 {
+        # Pass real client IP through to FastAPI
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Long timeout — mutation testing jobs can take up to 60 minutes
+        transport http {
+            response_header_timeout 3600s
+            read_buffer_size 4096
+        }
+    }
+
+    # Increase max upload size to match MAX_UPLOAD_MB in .env (50 MB + headroom)
+    request_body {
+        max_size 60MB
+    }
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+}
