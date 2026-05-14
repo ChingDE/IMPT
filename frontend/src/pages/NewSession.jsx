@@ -104,6 +104,14 @@ export function NewSessionUpload() {
 
   useEffect(() => { getSession(id).then(setSession).catch(() => nav('/dashboard')); }, [id]);
 
+  if (!session) return (
+    <AppShell>
+      <div className="page-content" style={{ textAlign:'center', paddingTop:60, color:'var(--gray-400)' }}>
+        Loading session…
+      </div>
+    </AppShell>
+  );
+
   const handleFile = f => {
     if (!f) return;
     if (!f.name.endsWith('.zip')) { setError('Invalid file type. Please upload a .zip file.'); return; }
@@ -231,6 +239,8 @@ export function NewSessionOperators() {
 
   useEffect(() => { getSession(id).then(s => { setSession(s); if(s.selected_operators) setSelected(new Set(JSON.parse(s.selected_operators))); }).catch(()=>nav('/dashboard')); }, [id]);
 
+  if (!session) return <AppShell><div className="page-content" style={{textAlign:'center',paddingTop:60,color:'var(--gray-400)'}}>Loading…</div></AppShell>;
+
   const toggle = code => setSelected(s => { const n=new Set(s); n.has(code)?n.delete(code):n.add(code); return n; });
 
   const handleNext = async () => {
@@ -314,6 +324,8 @@ export function NewSessionBudget() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => { getSession(id).then(s=>{setSession(s);if(s.time_budget_minutes)setBudgetVal(s.time_budget_minutes);}).catch(()=>nav('/dashboard')); },[id]);
+
+  if (!session) return <AppShell><div className="page-content" style={{textAlign:'center',paddingTop:60,color:'var(--gray-400)'}}>Loading…</div></AppShell>;
 
   // FR087 — Dynamic metrics
   const estCoverage = Math.min(100, Math.round(10 + (budget/120)*85));
