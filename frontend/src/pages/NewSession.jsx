@@ -112,9 +112,16 @@ export function NewSessionUpload() {
   const [loading, setLoading]   = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [dragOver, setDragOver] = useState(false);
+  const [dragOver, setDragOver]   = useState(false);
+  const [uploadDone, setUploadDone] = useState(false);
 
-  useEffect(() => { getSession(id).then(setSession).catch(() => nav('/dashboard')); }, [id]);
+  useEffect(() => {
+    getSession(id).then(s => {
+      setSession(s);
+      // If already uploaded, show success state on resume
+      if (s.upload_path && s.status !== 'not_started') setUploadDone(true);
+    }).catch(() => nav('/dashboard'));
+  }, [id]);
 
   if (!session) return (
     <AppShell>
@@ -140,6 +147,7 @@ export function NewSessionUpload() {
       const updated = await uploadProject(id, fd);
       setProgress(100);
       setSession(updated);
+      setUploadDone(true);
     } catch (err) {
       setProgress(0);
       setError(err.response?.data?.detail || 'Upload failed. Please check your project structure.');
@@ -148,7 +156,7 @@ export function NewSessionUpload() {
     }
   };
 
-  const uploaded = session?.status && session.status !== 'not_started' && !!session?.upload_path;
+  const uploaded = uploadDone || (session?.status && session.status !== 'not_started' && !!session?.upload_path);
   const lang = session?.language || 'java';
 
   return (
