@@ -5,6 +5,7 @@ import { register } from '../api/client';
 import { Alert, LogoMark } from '../components/UI';
 import { CheckCircle } from 'lucide-react';
 
+// ── Password strength — defined OUTSIDE Register so it never remounts ─────────
 function PasswordStrength({ password }) {
   const checks = [
     { label: 'At least 8 characters',   ok: password.length >= 8 },
@@ -17,7 +18,6 @@ function PasswordStrength({ password }) {
   const labels = ['', 'Weak', 'Fair', 'Good', 'Good', 'Strong'];
   const colors = ['', 'var(--red)', 'var(--amber)', '#22C55E', '#22C55E', 'var(--green)'];
   const widths = ['0%', '25%', '50%', '75%', '85%', '100%'];
-
   if (!password) return null;
   return (
     <>
@@ -29,8 +29,8 @@ function PasswordStrength({ password }) {
       </div>
       <div style={{ background: 'var(--gray-50)', borderRadius: 6, padding: '8px 12px', marginTop: 4 }}>
         {checks.map((c, i) => (
-          <div key={i} style={{ fontSize: 12, padding: '2px 0', display: 'flex', alignItems: 'center', gap: 6,
-            color: c.ok ? 'var(--green)' : 'var(--gray-400)' }}>
+          <div key={i} style={{ fontSize: 12, padding: '2px 0', display: 'flex', alignItems: 'center',
+            gap: 6, color: c.ok ? 'var(--green)' : 'var(--gray-400)' }}>
             {c.ok ? <CheckCircle size={11} /> : '○'} {c.label}
           </div>
         ))}
@@ -41,18 +41,31 @@ function PasswordStrength({ password }) {
 
 export default function Register() {
   const nav = useNavigate();
-  const [form, setForm] = useState({
-    first_name:'', last_name:'', email:'', organization:'',
-    password:'', confirm:'', agree: false,
+  const [form, setFormState] = useState({
+    first_name: '', last_name: '', email: '', organization: '',
+    password: '', confirm: '', agree: false,
   });
-  const [errors, setErrors] = useState({});
+  const [touched, setTouched]     = useState({});
+  const [errors, setErrors]       = useState({});
   const [globalError, setGlobalError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]     = useState(false);
 
-  const set = k => e => {
-    setForm(f => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
-    setErrors(er => ({ ...er, [k]: '' }));
+  // Update field without touching error state during typing
+  const handleChange = (key) => (e) => {
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    setFormState(prev => ({ ...prev, [key]: value }));
+    // Clear error for this field when user types
+    if (errors[key]) {
+      setErrors(prev => ({ ...prev, [key]: '' }));
+    }
   };
+
+  const handleBlur = (key) => () => {
+    setTouched(prev => ({ ...prev, [key]: true }));
+  };
+
+  // Only show error if field has been touched
+  const fieldError = (key) => touched[key] ? errors[key] : '';
 
   const validate = () => {
     const errs = {};
@@ -67,8 +80,10 @@ export default function Register() {
     return errs;
   };
 
-  const handleSubmit = async e => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    // Mark all fields as touched on submit
+    setTouched({ first_name:true, last_name:true, email:true, password:true, confirm:true, agree:true });
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true); setGlobalError('');
@@ -83,28 +98,24 @@ export default function Register() {
       nav('/verify-email-sent', { state: { email: form.email } });
     } catch (err) {
       const detail = err.response?.data?.detail || 'Registration failed. Please try again.';
-      if (detail.includes('already registered')) setErrors(e => ({ ...e, email: detail }));
-      else setGlobalError(detail);
+      if (detail.includes('already registered')) {
+        setErrors(prev => ({ ...prev, email: detail }));
+        setTouched(prev => ({ ...prev, email: true }));
+      } else {
+        setGlobalError(detail);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const Field = ({ id, label, type = 'text', placeholder, optional = false }) => (
-    <div className="form-group">
-      <label className="form-label">{label}{optional && <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}> (Optional)</span>}</label>
-      <input
-        className={`form-input ${errors[id] ? 'error' : form[id] && !errors[id] ? 'success' : ''}`}
-        type={type} placeholder={placeholder}
-        value={form[id]} onChange={set(id)}
-      />
-      {errors[id] && <div className="form-hint err">{errors[id]}</div>}
-      {id === 'email' && form.email && !errors.email && /\S+@\S+\.\S+/.test(form.email) &&
-        <div className="form-hint ok"><CheckCircle size={12} /> Valid email format</div>}
-      {id === 'confirm' && form.confirm && form.password === form.confirm && !errors.confirm &&
-        <div className="form-hint ok"><CheckCircle size={12} /> Passwords match</div>}
-    </div>
-  );
+  // Input class — only show red/green after field is touched
+  const inputClass = (key) => {
+    const err = fieldError(key);
+    if (err) return 'form-input error';
+    if (touched[key] && form[key]) return 'form-input success';
+    return 'form-input';
+  };
 
   return (
     <div className="auth-page">
@@ -119,42 +130,142 @@ export default function Register() {
 
         {globalError && <Alert type="error">{globalError}</Alert>}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
+          {/* First + Last name */}
           <div className="form-row-2">
-            <Field id="first_name" label="First Name" placeholder="John" />
-            <Field id="last_name"  label="Last Name"  placeholder="Doe" />
+            <div className="form-group">
+              <label className="form-label">First Name</label>
+              <input
+                className={inputClass('first_name')}
+                type="text"
+                placeholder="John"
+                value={form.first_name}
+                onChange={handleChange('first_name')}
+                onBlur={handleBlur('first_name')}
+              />
+              {fieldError('first_name') && (
+                <div className="form-hint err">{fieldError('first_name')}</div>
+              )}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Last Name</label>
+              <input
+                className={inputClass('last_name')}
+                type="text"
+                placeholder="Doe"
+                value={form.last_name}
+                onChange={handleChange('last_name')}
+                onBlur={handleBlur('last_name')}
+              />
+              {fieldError('last_name') && (
+                <div className="form-hint err">{fieldError('last_name')}</div>
+              )}
+            </div>
           </div>
-          <Field id="email"        label="Email Address"         type="email" placeholder="john@example.com" />
-          <Field id="organization" label="Organization"          placeholder="Your company" optional />
 
+          {/* Email */}
+          <div className="form-group">
+            <label className="form-label">Email Address</label>
+            <input
+              className={inputClass('email')}
+              type="email"
+              placeholder="john@example.com"
+              value={form.email}
+              onChange={handleChange('email')}
+              onBlur={handleBlur('email')}
+            />
+            {fieldError('email') && (
+              <div className="form-hint err">{fieldError('email')}</div>
+            )}
+            {touched.email && form.email && !fieldError('email') && /\S+@\S+\.\S+/.test(form.email) && (
+              <div className="form-hint ok"><CheckCircle size={12} /> Valid email format</div>
+            )}
+          </div>
+
+          {/* Organization (optional) */}
+          <div className="form-group">
+            <label className="form-label">
+              Organization <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(Optional)</span>
+            </label>
+            <input
+              className="form-input"
+              type="text"
+              placeholder="Your company or university"
+              value={form.organization}
+              onChange={handleChange('organization')}
+            />
+          </div>
+
+          {/* Password */}
           <div className="form-group">
             <label className="form-label">Password</label>
-            <input className={`form-input ${errors.password ? 'error' : ''}`} type="password"
-              placeholder="••••••••" value={form.password} onChange={set('password')} />
-            {errors.password && <div className="form-hint err">{errors.password}</div>}
+            <input
+              className={inputClass('password')}
+              type="password"
+              placeholder="••••••••"
+              value={form.password}
+              onChange={handleChange('password')}
+              onBlur={handleBlur('password')}
+            />
+            {fieldError('password') && (
+              <div className="form-hint err">{fieldError('password')}</div>
+            )}
             <PasswordStrength password={form.password} />
           </div>
 
-          <Field id="confirm" label="Confirm Password" type="password" placeholder="••••••••" />
-
+          {/* Confirm password */}
           <div className="form-group">
-            <label className="form-check">
-              <input type="checkbox" checked={form.agree} onChange={set('agree')} />
-              I agree to the{' '}
-              <span className="link" onClick={() => window.open('/terms', '_blank')}>Terms of Service</span>
-              {' '}and{' '}
-              <span className="link" onClick={() => window.open('/privacy', '_blank')}>Privacy Policy</span>
-            </label>
-            {errors.agree && <div className="form-hint err">{errors.agree}</div>}
+            <label className="form-label">Confirm Password</label>
+            <input
+              className={inputClass('confirm')}
+              type="password"
+              placeholder="••••••••"
+              value={form.confirm}
+              onChange={handleChange('confirm')}
+              onBlur={handleBlur('confirm')}
+            />
+            {fieldError('confirm') && (
+              <div className="form-hint err">{fieldError('confirm')}</div>
+            )}
+            {touched.confirm && form.confirm && form.password === form.confirm && !fieldError('confirm') && (
+              <div className="form-hint ok"><CheckCircle size={12} /> Passwords match</div>
+            )}
           </div>
 
-          <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading || !form.agree}>
+          {/* ToS checkbox */}
+          <div className="form-group">
+            <label className="form-check">
+              <input
+                type="checkbox"
+                checked={form.agree}
+                onChange={handleChange('agree')}
+              />
+              I agree to the{' '}
+              <span className="link" onClick={(e) => { e.preventDefault(); nav('/terms'); }}>
+                Terms of Service
+              </span>
+              {' '}and{' '}
+              <span className="link" onClick={(e) => { e.preventDefault(); nav('/privacy'); }}>
+                Privacy Policy
+              </span>
+            </label>
+            {fieldError('agree') && (
+              <div className="form-hint err">{fieldError('agree')}</div>
+            )}
+          </div>
+
+          <button
+            className="btn btn-primary btn-full btn-lg"
+            type="submit"
+            disabled={loading || !form.agree}
+          >
             {loading ? 'Creating account…' : 'Create Account'}
           </button>
         </form>
 
         <div style={{ textAlign: 'center', marginTop: 16, fontSize: 13.5, color: 'var(--gray-500)' }}>
-          Already have an account? <span className="link" onClick={() => nav('/login')}>Sign In</span>
+          Already have an account?{' '}
+          <span className="link" onClick={() => nav('/login')}>Sign In</span>
         </div>
       </div>
     </div>
