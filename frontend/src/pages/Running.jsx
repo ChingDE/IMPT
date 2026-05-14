@@ -25,7 +25,7 @@ export default function Running() {
     // Poll all jobs
     const interval = setInterval(async () => {
       try {
-        const updated = await Promise.all((session.jobs || []).map(j => getJobStatus(j)));
+        const updated = await Promise.all((session?.jobs || []).map(j => getJobStatus(j)));
         setJobs(updated);
         const impt = updated.find(j => j.strategy === 'impt') || updated[0];
         if (!impt) return;

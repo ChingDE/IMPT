@@ -102,7 +102,7 @@ export default function Profile() {
               {[
                 {l:'Account Created',v:user?.created_at?new Date(user.created_at).toLocaleDateString():'—'},
                 {l:'Total Sessions',v:stats?.total_sessions??'—'},
-                {l:'Time Saved',v:stats?`${Math.round(stats.total_time_saved_minutes)}m`:'—'},
+                {l:'Time Saved',v:stats?`${Math.round(stats?.total_time_saved_minutes||0)}m`:'—'},
               ].map(({l,v})=>(
                 <div key={l} className="stat-card" style={{textAlign:'center'}}>
                   <div className="stat-value" style={{fontSize:18}}>{v}</div>

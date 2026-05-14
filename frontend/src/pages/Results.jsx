@@ -68,7 +68,7 @@ export default function Results() {
   const SortIcon = ({ col }) => sortBy === col ? (sortDir === 'desc' ? ' ↓' : ' ↑') : '';
 
   const handleExportCSV = async () => {
-    if (!imptJob?.job_id) return;
+    if (!imptJob) return;
     try {
       const { exportJobCSV: e } = await import('../api/client');
       const blob = await e(imptJob.job_id);
@@ -130,7 +130,7 @@ export default function Results() {
                 {session?.language} · Completed {session?.completed_at ? new Date(session.completed_at).toLocaleString() : ''}
                 {session?.started_at && session?.completed_at && (
                   <span style={{ marginLeft:8 }}>
-                    · Duration: {Math.round((new Date(session.completed_at)-new Date(session.started_at))/60000)} min
+                    · Duration: {session?.completed_at && session?.started_at ? Math.round((new Date(session.completed_at)-new Date(session.started_at))/60000) : '—'} min
                   </span>
                 )}
               </div>
