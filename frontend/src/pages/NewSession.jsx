@@ -133,34 +133,16 @@ export function NewSessionUpload() {
 
   const handleUpload = async () => {
     if (!file) { setError('Please select a file to upload.'); return; }
-    setUploading(true); setError(''); setProgress(0);
+    setUploading(true); setError(''); setProgress(20);
     try {
       const fd = new FormData(); fd.append('file', file);
-      // Use XMLHttpRequest for real upload progress
-      const updated = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', );
-        const token = localStorage.getItem('impt_token');
-        if (token) xhr.setRequestHeader('Authorization', 'Bearer ' + token);
-        xhr.upload.onprogress = e => {
-          if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 90));
-        };
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            setProgress(100);
-            resolve(JSON.parse(xhr.responseText));
-          } else {
-            try { reject(new Error(JSON.parse(xhr.responseText).detail || 'Upload failed.')); }
-            catch { reject(new Error('Upload failed. Please check your project structure.')); }
-          }
-        };
-        xhr.onerror = () => reject(new Error('Upload failed. Please check your project structure.'));
-        xhr.send(fd);
-      });
+      setProgress(50);
+      const updated = await uploadProject(id, fd);
+      setProgress(100);
       setSession(updated);
     } catch (err) {
       setProgress(0);
-      setError(err.message || err.response?.data?.detail || 'Upload failed. Please check your project structure.');
+      setError(err.response?.data?.detail || 'Upload failed. Please check your project structure.');
     } finally {
       setUploading(false);
     }
