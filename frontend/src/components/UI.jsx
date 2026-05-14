@@ -1,6 +1,7 @@
 // src/components/UI.jsx
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useState } from 'react';
 import {
   Home, PlayCircle, BarChart2, Settings, Clock, Save, HelpCircle,
   User, Shield, Info, CheckCircle, XCircle, AlertTriangle, X
