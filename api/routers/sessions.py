@@ -207,29 +207,46 @@ async def upload_project(
     except zipfile.BadZipFile:
         raise HTTPException(status_code=422, detail="The uploaded file is not a valid ZIP archive.")
 
-    # Find project root (unwrap single top-level dir)
+    # Find project root — unwrap single top-level dir (handles GitHub zip format)
     items = list(upload_dir.iterdir())
     project_root = upload_dir
     if len(items) == 1 and items[0].is_dir():
         project_root = items[0]
 
     # Validate project structure (FR062, FR063, FR064)
+    # Search recursively up to 2 levels to handle nested structures
     language = session.language
     if language == "java":
-        has_build = (project_root / "pom.xml").exists() or (project_root / "build.gradle").exists()
+        has_build = (
+            (project_root / "pom.xml").exists() or
+            (project_root / "build.gradle").exists() or
+            any(project_root.rglob("pom.xml")) or
+            any(project_root.rglob("build.gradle"))
+        )
         if not has_build:
             raise HTTPException(
                 status_code=422,
                 detail="Java build configuration file (pom.xml or build.gradle) not found in project."
             )
+        # Find actual root with build file for accurate LOC counting
+        for p in list(project_root.rglob("pom.xml")) + list(project_root.rglob("build.gradle")):
+            project_root = p.parent
+            break
         detected_framework = "PIT"
     else:
-        has_pkg = (project_root / "package.json").exists()
+        # Search recursively for package.json (handles GitHub zip with subfolder)
+        pkg_candidates = list(project_root.rglob("package.json"))
+        # Filter out node_modules
+        pkg_candidates = [p for p in pkg_candidates if "node_modules" not in str(p)]
+        has_pkg = bool(pkg_candidates)
         if not has_pkg:
             raise HTTPException(
                 status_code=422,
-                detail="package.json not found in project."
+                detail="package.json not found in project. Please ensure this is a JavaScript/Node.js project."
             )
+        # Use the shallowest package.json as project root
+        pkg_candidates.sort(key=lambda p: len(p.parts))
+        project_root = pkg_candidates[0].parent
         detected_framework = "Stryker"
 
     # Count files and LOC
