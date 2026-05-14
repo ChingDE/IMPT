@@ -31,12 +31,8 @@ export function AdminLogin() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-logo">
-          <div style={{ width: 64, height: 64, background: '#1E3A5F', borderRadius: 16, display: 'inline-grid', placeItems: 'center', marginBottom: 12 }}>
-            <svg width="32" height="32" viewBox="0 0 20 20" fill="none">
-              <polygon points="10,2 18,7 18,13 10,18 2,13 2,7" fill="rgba(255,255,255,0.85)" />
-              <polygon points="10,2 18,7 10,10 2,7" fill="#fff" />
-            </svg>
-          </div>
+          <img src="/logo.png" width={64} height={64} alt="IMPT Logo"
+            style={{ objectFit: 'contain', borderRadius: 12, marginBottom: 12 }} />
           <div className="auth-brand">Admin Portal</div>
           <div className="auth-sub">Intelligent Mutation Prioritization Tool</div>
           <div style={{ marginTop: 8, display: 'inline-block', background: '#FEF3C7', color: '#92400E', fontSize: 11, fontWeight: 700, padding: '3px 12px', borderRadius: 999, letterSpacing: .4 }}>
@@ -108,12 +104,8 @@ export function AdminFirstLogin() {
     <div className="auth-page">
       <div className="auth-card wide">
         <div className="auth-logo">
-          <div style={{ width: 56, height: 56, background: '#1E3A5F', borderRadius: 14, display: 'inline-grid', placeItems: 'center', marginBottom: 10 }}>
-            <svg width="28" height="28" viewBox="0 0 20 20" fill="none">
-              <polygon points="10,2 18,7 18,13 10,18 2,13 2,7" fill="rgba(255,255,255,0.85)" />
-              <polygon points="10,2 18,7 10,10 2,7" fill="#fff" />
-            </svg>
-          </div>
+          <img src="/logo.png" width={64} height={64} alt="IMPT Logo"
+            style={{ objectFit: 'contain', borderRadius: 12, marginBottom: 12 }} />
           <div className="auth-brand">Set Up Your Admin Account</div>
         </div>
 

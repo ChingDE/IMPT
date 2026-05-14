@@ -1,6 +1,7 @@
 // src/components/UI.jsx
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useState } from 'react';
 import {
   Home, PlayCircle, BarChart2, Settings, Clock, Save, HelpCircle,
   User, Shield, Info, CheckCircle, XCircle, AlertTriangle, X
@@ -10,12 +11,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 
 // ── Logo SVG ──────────────────────────────────────────────────────
 export const LogoMark = ({ size = 20, bg = '#7C3AED' }) => (
-  <div style={{ width: size*1.8, height: size*1.8, background: bg, borderRadius: 8, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
-      <polygon points="10,2 18,7 18,13 10,18 2,13 2,7" fill="rgba(255,255,255,0.85)" />
-      <polygon points="10,2 18,7 10,10 2,7" fill="#fff" />
-    </svg>
-  </div>
+  <img src="/logo.png" width={size * 1.8} height={size * 1.8} alt="IMPT Logo"
+    style={{ objectFit: 'contain', borderRadius: 8 }} />
 );
 
 // ── Sidebar ───────────────────────────────────────────────────────

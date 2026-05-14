@@ -274,7 +274,7 @@ async def verify_email(
             detail="Invalid verification link. If you've already verified your account, please log in."
         )
 
-    if datetime.utcnow() > token_obj.expires_at:
+    if datetime.utcnow() > token_obj.expires_at.replace(tzinfo=None):
         raise HTTPException(
             status_code=410,
             detail="This verification link has expired. Please request a new verification email."
@@ -389,7 +389,7 @@ async def reset_password(
             status_code=400,
             detail="This link is invalid or has already been used. Please request a new password reset link."
         )
-    if datetime.utcnow() > token_obj.expires_at:
+    if datetime.utcnow() > token_obj.expires_at.replace(tzinfo=None):
         raise HTTPException(
             status_code=410,
             detail="This reset link has expired. Please request a new password reset link."
