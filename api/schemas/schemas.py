@@ -1,44 +1,95 @@
-"""
-api/schemas/schemas.py
-Pydantic v2 request/response schemas.
-"""
-
+"""api/schemas/schemas.py — Pydantic request/response models."""
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, List, Optional
-
+from typing import Optional, List
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Auth
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Auth ───────────────────────────────────────────────────────────────────────
 
-class UserCreate(BaseModel):
+class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
-    full_name: Optional[str] = None
-    role: str = "student"
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    organization: Optional[str] = Field(default=None, max_length=255)
 
-    @field_validator("role")
+    @field_validator("first_name", "last_name")
     @classmethod
-    def validate_role(cls, v: str) -> str:
-        if v not in ("student", "professional", "admin"):
-            raise ValueError("role must be student, professional, or admin")
+    def validate_name(cls, v: str) -> str:
+        import re
+        if not re.match(r"^[A-Za-z\s\-]+$", v):
+            raise ValueError("Only letters, spaces, and hyphens allowed")
+        return v.strip()
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        import re
+        errors = []
+        if len(v) < 8:
+            errors.append("at least 8 characters")
+        if not re.search(r"[A-Z]", v):
+            errors.append("one uppercase letter")
+        if not re.search(r"[a-z]", v):
+            errors.append("one lowercase letter")
+        if not re.search(r"\d", v):
+            errors.append("one number")
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
+            errors.append("one special character")
+        if errors:
+            raise ValueError(f"Password must contain: {', '.join(errors)}")
+        return v
+
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class ChangeAdminPasswordRequest(BaseModel):
+    new_username: str
+    new_password: str
+    new_email: EmailStr
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8)
+    confirm_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        import re
+        errors = []
+        if not re.search(r"[A-Z]", v): errors.append("one uppercase letter")
+        if not re.search(r"[a-z]", v): errors.append("one lowercase letter")
+        if not re.search(r"\d", v): errors.append("one number")
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v): errors.append("one special character")
+        if errors:
+            raise ValueError(f"Password must contain: {', '.join(errors)}")
         return v
 
 
 class UserOut(BaseModel):
     id: str
     email: str
-    full_name: Optional[str]
+    first_name: str
+    last_name: str
+    organization: Optional[str] = None
     role: str
     is_active: bool
-    created_at: datetime
+    is_verified: bool
     username: Optional[str] = None
     must_change_password: bool = False
-
+    last_login_at: Optional[datetime] = None
+    created_at: datetime
     model_config = {"from_attributes": True}
 
 
@@ -48,94 +99,124 @@ class TokenOut(BaseModel):
     user: UserOut
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Projects
-# ─────────────────────────────────────────────────────────────────────────────
+class MessageOut(BaseModel):
+    message: str
 
-class ProjectCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
-    framework: str
-    loc: int = Field(default=0, ge=0)
-    test_count: int = Field(default=0, ge=0)
-    is_foss: bool = False
-    description: Optional[str] = None
 
-    @field_validator("framework")
+# ── Profile ────────────────────────────────────────────────────────────────────
+
+class ProfileUpdate(BaseModel):
+    first_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    last_name: Optional[str]  = Field(default=None, min_length=1, max_length=100)
+    organization: Optional[str] = Field(default=None, max_length=255)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+    confirm_password: str
+
+    @field_validator("new_password")
     @classmethod
-    def validate_framework(cls, v: str) -> str:
-        if v.upper() not in ("PIT", "STRYKER"):
-            raise ValueError("framework must be PIT or STRYKER")
-        return v.upper()
+    def validate_password(cls, v: str) -> str:
+        import re
+        errors = []
+        if not re.search(r"[A-Z]", v): errors.append("one uppercase letter")
+        if not re.search(r"[a-z]", v): errors.append("one lowercase letter")
+        if not re.search(r"\d", v): errors.append("one number")
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v): errors.append("one special character")
+        if errors:
+            raise ValueError(f"Password must contain: {', '.join(errors)}")
+        return v
 
 
-class ProjectOut(BaseModel):
+class UserStatsOut(BaseModel):
+    total_sessions: int
+    total_jobs: int
+    avg_mutation_score: float
+    avg_time_saved: float
+    avg_correlation: float
+    total_time_saved_minutes: float = 0.0
+
+
+# ── Test Sessions ──────────────────────────────────────────────────────────────
+
+class SessionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    language: str  # java | javascript
+    description: Optional[str] = Field(default=None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        import re
+        if not re.match(r"^[A-Za-z0-9\s\-_]+$", v):
+            raise ValueError("Session name can only contain letters, numbers, spaces, hyphens, and underscores")
+        return v.strip()
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str) -> str:
+        if v.lower() not in ("java", "javascript"):
+            raise ValueError("Language must be 'java' or 'javascript'")
+        return v.lower()
+
+
+class SessionOut(BaseModel):
     id: str
-    owner_id: str
     name: str
-    framework: str
-    loc: int
-    test_count: int
-    is_foss: bool
-    description: Optional[str]
-    upload_path: Optional[str]
+    language: str
+    description: Optional[str] = None
+    status: str
+    upload_filename: Optional[str] = None
+    upload_size_bytes: Optional[int] = None
+    file_count: Optional[int] = None
+    loc: Optional[int] = None
+    test_count: Optional[int] = None
+    detected_framework: Optional[str] = None
+    selected_operators: Optional[str] = None
+    time_budget_minutes: Optional[int] = None
+    run_comparison: bool = True
+    run_operator_based: bool = True
+    estimated_mutant_count: Optional[int] = None
+    recommended_budget_min: Optional[int] = None
+    recommended_budget_max: Optional[int] = None
+    share_token: Optional[str] = None
     created_at: datetime
-
+    updated_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Jobs
-# ─────────────────────────────────────────────────────────────────────────────
-
-DEFAULT_FACTOR_WEIGHTS = {
-    "historical_effectiveness": 0.30,
-    "code_complexity":          0.25,
-    "security_criticality":     0.20,
-    "change_recency":           0.15,
-    "bug_history":              0.10,
-}
+class SessionUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    description: Optional[str] = Field(default=None, max_length=500)
 
 
-class JobCreate(BaseModel):
-    project_id: str
-    time_budget_seconds: int = Field(
-        default=1800, ge=60, le=3600,
-        description="Time budget in seconds (60–3600)"
-    )
-    optimizer_strategy: str = Field(
-        default="AUTO",
-        description="AUTO | DP | GREEDY"
-    )
-    jaccard_threshold: float = Field(
-        default=0.90, ge=0.5, le=1.0,
-        description="Subsumption similarity threshold"
-    )
-    factor_weights: Optional[Dict[str, float]] = Field(
-        default=None,
-        description="Override default factor weights (must sum to 1.0)"
-    )
+class OperatorConfigRequest(BaseModel):
+    selected_operators: List[str]  # e.g. ["AOR", "ROR", "COR"]
 
-    @field_validator("optimizer_strategy")
-    @classmethod
-    def validate_strategy(cls, v: str) -> str:
-        if v.upper() not in ("AUTO", "DP", "GREEDY"):
-            raise ValueError("optimizer_strategy must be AUTO, DP, or GREEDY")
-        return v.upper()
 
+class TimeBudgetRequest(BaseModel):
+    time_budget_minutes: int = Field(ge=5, le=120)
+    run_comparison: bool = True
+    run_operator_based: bool = True
+
+
+# ── Jobs ───────────────────────────────────────────────────────────────────────
 
 class JobStatusOut(BaseModel):
     id: str
-    project_id: str
+    session_id: str
+    strategy: str
     status: str
-    celery_task_id: Optional[str]
     time_budget_seconds: int
     optimizer_strategy: str
     created_at: datetime
-    started_at: Optional[datetime]
-    completed_at: Optional[datetime]
-    error_message: Optional[str]
-
-    # Live metrics — populated progressively as the job runs
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
     total_mutants: int = 0
     selected_mutants: int = 0
     executed_mutants: int = 0
@@ -144,45 +225,31 @@ class JobStatusOut(BaseModel):
     time_saved_pct: float = 0.0
     subsumption_reduction_pct: float = 0.0
     execution_time_seconds: float = 0.0
-
     model_config = {"from_attributes": True}
 
 
 class JobResultOut(BaseModel):
     id: str
-    project_id: str
+    session_id: str
+    strategy: str
     status: str
     time_budget_seconds: int
     optimizer_strategy: str
-
-    # Counts
     total_mutants: int
     selected_mutants: int
     executed_mutants: int
     killed_mutants: int
-
-    # Scores
     mutation_score: float
     estimated_score: float
     ci_lower: float
     ci_upper: float
-
-    # Performance
     time_saved_pct: float
     subsumption_reduction_pct: float
     execution_time_seconds: float
-
-    # Timestamps
     created_at: datetime
-    started_at: Optional[datetime]
-    completed_at: Optional[datetime]
-
+    completed_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Mutant detail
-# ─────────────────────────────────────────────────────────────────────────────
 
 class MutantOut(BaseModel):
     id: str
@@ -190,22 +257,61 @@ class MutantOut(BaseModel):
     operator: str
     file: str
     line: int
-    original_code: str
-    mutated_code: str
+    original_code: Optional[str] = None
+    mutated_code: Optional[str] = None
     status: str
     priority_score: float
     execution_time: float
-    explanation: Optional[str]
-
+    explanation: Optional[str] = None
+    killing_test: Optional[str] = None
     model_config = {"from_attributes": True}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Health
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Admin ──────────────────────────────────────────────────────────────────────
 
-class HealthOut(BaseModel):
-    status: str
-    version: str
-    db: str
-    worker: str
+class AdminUserOut(BaseModel):
+    id: str
+    email: str
+    first_name: str
+    last_name: str
+    organization: Optional[str] = None
+    role: str
+    is_active: bool
+    is_verified: bool
+    created_at: datetime
+    last_login_at: Optional[datetime] = None
+    last_active_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class AdminStatsOut(BaseModel):
+    total_users: int
+    total_sessions: int
+    total_jobs: int
+    completed_jobs: int
+    active_users_7d: int
+
+
+class SystemConfigOut(BaseModel):
+    key: str
+    value: str
+    description: Optional[str] = None
+    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class SystemConfigUpdate(BaseModel):
+    value: str
+
+
+class AuditLogOut(BaseModel):
+    id: str
+    user_id: Optional[str] = None
+    level: str
+    category: str
+    action: str
+    message: str
+    ip_address: Optional[str] = None
+    outcome: str
+    created_at: datetime
+    model_config = {"from_attributes": True}

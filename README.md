@@ -1,160 +1,179 @@
 # IMPT — Intelligent Mutation Prioritization Tool
-**NovaSoft | FEU Institute of Technology**
 
-> Cost-Effective Mutation Testing Utilizing Intelligent Mutation Operator Prioritization and Selection on Free/Libre and Open-Source Software
+**NovaSoft · FEU Institute of Technology · A.Y. 2025–2026**
+
+Cost-effective mutation testing for FOSS projects using intelligent mutant prioritization and selection.
 
 ---
 
-## Quick start (local white-box testing — no Docker needed)
+## System Requirements
+
+| Component | Minimum | Recommended |
+|---|---|---|
+| OS | Ubuntu 22.04 LTS | Ubuntu 24.04 LTS |
+| CPU | 2 vCPU | 4 vCPU |
+| RAM | 4 GB | 8 GB |
+| Storage | 40 GB SSD | 80 GB SSD |
+| Python | 3.12+ | 3.12 |
+| Node.js | 18 LTS+ | 20 LTS |
+| Docker | CE 24+ | CE 27+ with Compose plugin |
+
+---
+
+## Local Development Setup
+
+### 1. Clone the repository
 
 ```bash
-# Install deps
+git clone git@github.com:ChingDE/IMPT.git
+cd IMPT
+```
+
+### 2. Set up the Python environment
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+```
 
-# Run tests (207 tests, no external services required)
+### 3. Configure environment
+
+```bash
+cp .env.example .env
+# Edit .env — local dev defaults (SQLite) work without changes
+```
+
+### 4. Run the test suite
+
+```bash
 PYTHONPATH=. python -m pytest tests/ -v
+# Expected: 83 passed
+```
 
-# Start API (uses SQLite, sync job runner)
+### 5. Start the API server
+
+```bash
 PYTHONPATH=. python scripts/run_local.py
-# Open: http://127.0.0.1:8000/docs
+# API: http://127.0.0.1:8000
+# Docs: http://127.0.0.1:8000/docs
+```
 
-# Run algorithm demo
+### 6. Start the frontend
+
+```bash
+cd frontend/src
+npm install
+npm run dev
+# Frontend: http://localhost:3000
+```
+
+### 7. Run the algorithm demo (no Docker needed)
+
+```bash
 PYTHONPATH=. python cli/run_demo.py --mutants 40 --budget 300 --kill-rate 0.72
 ```
 
 ---
 
-## Project structure
+## Production Deployment
+
+See `IMPT_v2_Redeployment_Guide.docx` for the complete step-by-step guide.
+
+### Quick reference
+
+```bash
+# On the Droplet (as imptuser):
+cd ~/impt
+git pull origin main
+docker compose up -d --build
+
+# Verify:
+curl http://localhost:8000/api/health
+# Expected: {"status":"ok","version":"2.0.0","db":"ok","worker":"ok (celery)"}
+```
+
+### Enable auto-start on reboot (NFR079)
+
+```bash
+sudo systemctl enable impt
+sudo systemctl status impt
+```
+
+---
+
+## Project Structure
 
 ```
 impt/
-├── impt/                          Core algorithm engine (zero external deps)
-│   ├── algorithms/
-│   │   ├── scoring.py             Algorithm 1 — Multi-Factor Scoring
-│   │   ├── subsumption.py         Algorithm 2 — 4-Stage Subsumption
-│   │   ├── optimization.py        Algorithm 3 — Knapsack Time-Budget Optimizer
-│   │   ├── extrapolation.py       Algorithm 4 — Wilson CI Extrapolation
-│   │   └── time_estimation.py     Algorithm 5 — Execution Time Estimator
-│   ├── engine.py                  Orchestration pipeline
-│   └── models/                    Mutant, Project, Result data models
-│
-├── adapters/                      Framework integration
-│   ├── pit_adapter.py             PIT (Java/Maven/Gradle) — runs + parses XML
-│   ├── stryker_adapter.py         Stryker (JS/TS) — runs + parses JSON
-│   └── factor_enricher.py         Static analysis: complexity, git, security
-│
-├── api/                           FastAPI REST backend
-│   ├── routers/
-│   │   ├── auth.py                POST /register, /token; GET /me
-│   │   ├── projects.py            CRUD /api/projects
-│   │   ├── upload.py              POST /api/projects/{id}/upload
-│   │   ├── jobs.py                POST /api/jobs; GET status/result/mutants
-│   │   └── health.py              GET /api/health
-│   ├── middleware.py              Rate limiting + request size enforcement
-│   └── schemas/                   Pydantic v2 request/response schemas
-│
-├── db/                            Database layer
-│   ├── database.py                Async SQLAlchemy engine + session factory
-│   ├── models/orm_models.py       User, ProjectRecord, MutationJob, MutantRecord
-│   └── repositories/              Data access — no raw SQL in routers
-│
-├── worker/                        Async job execution
-│   ├── celery_app.py              Celery app (graceful fallback if Redis absent)
-│   ├── tasks.py                   run_mutation_job — real adapters + synthetic fallback
-│   └── watchdog.py                Celery beat task: recover stuck jobs every 5 min
-│
-├── frontend/index.html            Single-file SPA (auth, dashboard, upload, results)
-│
-├── sandbox/Dockerfile             Isolated execution image (JDK 17 + Node 20 + PIT + Stryker)
-├── Dockerfile                     API + worker production image
-├── docker-compose.yml             Full stack: nginx + api + worker + beat + db + redis
-├── deploy/
-│   ├── nginx/nginx.conf           Reverse proxy (HTTP default; HTTPS opt-in)
-│   ├── nginx/ssl/                 Place fullchain.pem + privkey.pem here
-│   └── setup_vps.sh               One-script Ubuntu 22.04/24.04 bootstrap
-├── scripts/migrations/            Alembic migration files
-├── config/settings.py             All config via environment variables
-├── requirements.txt               Python dependencies
-├── .env.example                   Environment variable template
-└── .gitignore / .dockerignore
+├── impt/                   # Core algorithm engine
+│   ├── algorithms/         # 5 IMPT algorithms
+│   │   ├── scoring.py      # Algorithm 1 — Multi-Factor Scoring
+│   │   ├── subsumption.py  # Algorithm 2 — Subsumption Reduction
+│   │   ├── optimization.py # Algorithm 3 — Knapsack Time-Budget
+│   │   ├── extrapolation.py# Algorithm 4 — Wilson CI Extrapolation
+│   │   └── time_estimation.py # Algorithm 5 — Execution Time Estimator
+│   ├── models/             # Domain models (Mutant, Project, Result)
+│   └── engine.py           # IMPTEngine orchestrator
+├── adapters/               # PIT (Java) and Stryker (JS) adapters
+├── api/                    # FastAPI application
+│   ├── routers/            # Endpoint handlers
+│   └── schemas/            # Pydantic request/response models
+├── db/                     # Database layer
+│   ├── models/             # SQLAlchemy ORM models
+│   └── repositories/       # Data access layer
+├── worker/                 # Celery task queue
+├── services/               # Email service (Resend)
+├── frontend/src/           # React frontend (Vite)
+├── tests/                  # 83 tests (unit, integration, API, adapter)
+├── scripts/                # Local dev server, migrations
+├── deploy/                 # Dockerfile, docker-compose, Caddy, systemd
+└── cli/                    # Algorithm demo CLI
 ```
 
 ---
 
-## VPS deployment
+## Environment Variables
 
-### Prerequisites
-- Ubuntu 22.04 or 24.04 VPS (min 2 vCPU, 4 GB RAM)
-- Domain name pointed at the VPS IP
+See `.env.example` for all variables. Key ones:
 
-### Deploy
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL async connection string |
+| `REDIS_URL` | Upstash Redis (Celery broker) |
+| `SECRET_KEY` | JWT signing key (64-char hex) |
+| `RESEND_API_KEY` | Resend email API key |
+| `ALLOWED_ORIGINS` | CORS allowed frontend URLs |
 
-```bash
-# 1. Clone repo on the VPS
-git clone https://github.com/novasoft/impt.git /opt/impt
-cd /opt/impt
+---
 
-# 2. Configure environment
-cp .env.example .env
-# Edit .env — set POSTGRES_PASSWORD, SECRET_KEY, and your domain in ALLOWED_ORIGINS
+## API Documentation
 
-# 3. Build sandbox image (JDK + Node + PIT + Stryker; takes ~5 min first time)
-docker build -t impt-sandbox:latest ./sandbox/
+Interactive API docs available at `/docs` (Swagger UI) when the server is running.
 
-# 4. Start the full stack
-docker compose up -d --build
+---
 
-# 5. Run database migrations
-docker compose exec api alembic upgrade head
-
-# 6. Open http://your-vps-ip in a browser
-```
-
-### Enable HTTPS (after DNS propagates)
+## Running Tests
 
 ```bash
-apt install certbot
-certbot certonly --standalone -d your-domain.com
-cp /etc/letsencrypt/live/your-domain.com/fullchain.pem deploy/nginx/ssl/
-cp /etc/letsencrypt/live/your-domain.com/privkey.pem   deploy/nginx/ssl/
-# Uncomment the HTTPS server block in deploy/nginx/nginx.conf
-docker compose restart nginx
-```
+# All tests
+PYTHONPATH=. python -m pytest tests/ -v
 
-### Useful commands
+# Unit tests only
+PYTHONPATH=. python -m pytest tests/unit/ -v
 
-```bash
-docker compose logs -f api worker     # Live logs
-docker compose ps                     # Service status
-docker compose exec api alembic upgrade head  # Run migrations
-docker compose down -v                # Full teardown (deletes data)
+# API tests
+PYTHONPATH=. python -m pytest tests/api/ -v
 ```
 
 ---
 
-## Test suite
+## Team
 
-| Suite | Tests | Coverage |
-|---|---|---|
-| Unit — algorithms | 83 | 95% |
-| Unit — adapters | 81 | 91% |
-| Integration — pipeline | 13 | 94% |
-| API — endpoints | 30 | 88% |
-| **Total** | **207** | **~93%** |
+- Daniel Emile F. Ching
+- Jacy Ahrone N. Laurente
+- James Lawrence C. Vicente
 
-```bash
-PYTHONPATH=. python -m pytest tests/ -v --cov=impt --cov=api --cov=adapters --cov=worker
-```
-
----
-
-## Supported FOSS projects
-
-| Framework | Language | Build tool | Requirements |
-|---|---|---|---|
-| PIT | Java | Maven | pom.xml in project root |
-| PIT | Java | Gradle | build.gradle in project root |
-| Stryker | JavaScript | npm/yarn | package.json in project root |
-| Stryker | TypeScript | npm/yarn | package.json + tsconfig.json |
-
-Maximum upload size: 50 MB (configurable via `MAX_UPLOAD_MB` env var).
+**Adviser:** Dr. Angelo C. Arguson  
+**Course:** CS0033 — Software Engineering  
+**Term:** 3rd Term, A.Y. 2025–2026

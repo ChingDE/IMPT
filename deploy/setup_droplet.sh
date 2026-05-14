@@ -1,99 +1,132 @@
 #!/usr/bin/env bash
-# ─────────────────────────────────────────────────────────────────────────────
 # deploy/setup_droplet.sh
-# One-time bootstrap for a fresh DigitalOcean Ubuntu 24.04 Droplet.
-#
-# Run as root immediately after first SSH login:
-#   bash deploy/setup_droplet.sh
-#
-# What it does:
-#   1. Updates the system
-#   2. Installs Docker + Compose plugin
-#   3. Installs Caddy (reverse proxy / HTTPS)
-#   4. Configures UFW firewall
-#   5. Creates a non-root imptuser
-#   6. Clones the repo (prompts for GitHub details)
-#   7. Reminds you to fill in .env
-# ─────────────────────────────────────────────────────────────────────────────
+# Bootstrap an Ubuntu 24.04 DigitalOcean Droplet for IMPT.
+# Run once as root immediately after Droplet creation.
+# Usage: bash /root/setup_droplet.sh
 
 set -euo pipefail
 
-echo "════════════════════════════════════════════════"
-echo "  IMPT Droplet Bootstrap"
-echo "════════════════════════════════════════════════"
+echo ""
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║          IMPT Droplet Bootstrap Script              ║"
+echo "╚══════════════════════════════════════════════════════╝"
+echo ""
 
-# ── 1. System update ──────────────────────────────────────────────────────────
-echo "[1/7] Updating system packages..."
-apt-get update -qq && apt-get upgrade -y -qq
+# ── Update system ──────────────────────────────────────────────────────────────
+echo "→ Updating system packages..."
+apt-get update -qq
+apt-get upgrade -y -qq
+apt-get install -y -qq \
+    curl wget git unzip \
+    ufw fail2ban \
+    ca-certificates gnupg lsb-release
 
-# ── 2. Docker ─────────────────────────────────────────────────────────────────
-echo "[2/7] Installing Docker..."
-curl -fsSL https://get.docker.com | sh
-systemctl enable --now docker
-docker --version
-docker compose version
+# ── Docker ─────────────────────────────────────────────────────────────────────
+echo "→ Installing Docker..."
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+    | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
 
-# ── 3. Caddy ──────────────────────────────────────────────────────────────────
-echo "[3/7] Installing Caddy..."
-apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+   https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+  | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+apt-get update -qq
+apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+systemctl enable docker
+systemctl start docker
+
+# ── Caddy ──────────────────────────────────────────────────────────────────────
+echo "→ Installing Caddy..."
+apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
     | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
-    | tee /etc/apt/sources.list.d/caddy-stable.list
+curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
+    | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
 apt-get update -qq
 apt-get install -y -qq caddy
-caddy version
 
-# ── 4. Firewall ───────────────────────────────────────────────────────────────
-echo "[4/7] Configuring UFW firewall..."
-apt-get install -y -qq ufw
+mkdir -p /var/log/caddy
+systemctl enable caddy
+
+# ── Firewall ───────────────────────────────────────────────────────────────────
+echo "→ Configuring UFW firewall..."
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp    comment "SSH"
-ufw allow 80/tcp    comment "HTTP  (Caddy / Cloudflare)"
-ufw allow 443/tcp   comment "HTTPS (Caddy / Cloudflare)"
-# Port 8000 (FastAPI) is NOT opened — only Caddy on the host can reach it
+ufw allow 80/tcp    comment "HTTP (Caddy ACME)"
+ufw allow 443/tcp   comment "HTTPS"
 ufw --force enable
-ufw status verbose
 
-# ── 5. Non-root user ──────────────────────────────────────────────────────────
-echo "[5/7] Creating imptuser..."
+# ── Fail2ban ───────────────────────────────────────────────────────────────────
+systemctl enable fail2ban
+systemctl start fail2ban
+
+# ── Deployment user ────────────────────────────────────────────────────────────
+echo "→ Creating imptuser..."
 if ! id imptuser &>/dev/null; then
-    useradd -m -s /bin/bash -G docker imptuser
+    useradd -m -s /bin/bash -u 1001 imptuser
 fi
-# Copy root SSH key so imptuser can also log in
+usermod -aG docker imptuser
 mkdir -p /home/imptuser/.ssh
-cp /root/.ssh/authorized_keys /home/imptuser/.ssh/
-chown -R imptuser:imptuser /home/imptuser/.ssh
 chmod 700 /home/imptuser/.ssh
-chmod 600 /home/imptuser/.ssh/authorized_keys
 
-# ── 6. Clone the repository ───────────────────────────────────────────────────
-echo "[6/7] Setting up repository..."
-echo ""
-echo "  You need a GitHub deploy key. Steps:"
-echo "  1. Run as imptuser: ssh-keygen -t ed25519 -f ~/.ssh/github_deploy -N ''"
-echo "  2. cat ~/.ssh/github_deploy.pub"
-echo "  3. Add that key in GitHub → repo → Settings → Deploy Keys"
-echo ""
-echo "  Then clone with:"
-echo "  su - imptuser"
-echo "  git clone git@github.com:YOUR_USERNAME/impt.git ~/impt"
-echo "  cd ~/impt"
-echo "  cp .env.example .env && nano .env"
-echo ""
+# Copy root SSH authorized_keys to imptuser so existing keys work
+if [ -f /root/.ssh/authorized_keys ]; then
+    cp /root/.ssh/authorized_keys /home/imptuser/.ssh/
+    chmod 600 /home/imptuser/.ssh/authorized_keys
+    chown -R imptuser:imptuser /home/imptuser/.ssh
+fi
 
-# ── 7. Caddy config reminder ──────────────────────────────────────────────────
-echo "[7/7] Caddy setup reminder..."
-echo ""
-echo "  After cloning:"
-echo "  1. Edit deploy/caddy/Caddyfile — replace api.your-domain.com"
-echo "  2. cp ~/impt/deploy/caddy/Caddyfile /etc/caddy/Caddyfile"
-echo "  3. systemctl reload caddy"
-echo ""
+# ── Swap (for burst load during Docker builds) ─────────────────────────────────
+echo "→ Setting up 2GB swap..."
+if [ ! -f /swapfile ]; then
+    fallocate -l 2G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
 
-echo "════════════════════════════════════════════════"
-echo "  Bootstrap complete."
-echo "  Next: su - imptuser → clone repo → fill .env → docker compose up -d --build"
-echo "════════════════════════════════════════════════"
+# ── Systemd service (NFR079 — auto-start on reboot) ──────────────────────────
+echo "→ Installing systemd service..."
+# Copy service file after repo is cloned (post-deploy step)
+cat > /etc/systemd/system/impt.service << 'UNIT'
+[Unit]
+Description=IMPT — Intelligent Mutation Prioritization Tool
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=imptuser
+WorkingDirectory=/home/imptuser/impt
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+# Note: Do not enable yet — enable after repo is cloned with: systemctl enable impt
+
+# ── Summary ────────────────────────────────────────────────────────────────────
+echo ""
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║  Bootstrap complete! Next steps:                    ║"
+echo "║                                                      ║"
+echo "║  1. Switch to imptuser:  su - imptuser              ║"
+echo "║  2. Generate deploy key: ssh-keygen -t ed25519 \\    ║"
+echo "║        -f ~/.ssh/github_deploy -N \"\"               ║"
+echo "║  3. Add key to GitHub repo → Deploy Keys            ║"
+echo "║  4. Clone repo:  git clone git@github.com:...       ║"
+echo "║  5. Set up .env: cp .env.example .env && nano .env  ║"
+echo "║  6. Start:       docker compose up -d --build       ║"
+echo "╚══════════════════════════════════════════════════════╝"
+echo ""

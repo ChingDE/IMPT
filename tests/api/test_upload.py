@@ -1,85 +1,17 @@
-"""
-tests/api/test_upload.py
-Tests for POST /api/projects/{id}/upload
-Uses in-memory SQLite + real zip/tar construction.
-"""
-
+"""tests/api/test_upload.py — Session upload endpoint tests."""
 import io
-import json
-import tarfile
 import zipfile
-
+import asyncio
 import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from db.database import Base, get_db
+from fastapi.testclient import TestClient
 from main import create_app
+from db.database import create_tables
 
-# ── Test DB setup (same pattern as test_api.py) ───────────────────────────────
-TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
-test_engine = create_async_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
-TestSessionLocal = async_sessionmaker(
-    bind=test_engine, class_=AsyncSession, expire_on_commit=False
-)
+app = create_app()
 
 
-async def override_get_db():
-    async with TestSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-
-
-@pytest_asyncio.fixture(scope="function")
-async def client(tmp_path, monkeypatch):
-    """Test client with in-memory DB and tmp upload dir."""
-    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
-
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    app = create_app()
-    app.dependency_overrides[get_db] = override_get_db
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        yield ac
-
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-async def _register_login(client, email="up@feu.edu.ph", pw="Password123"):
-    await client.post("/api/auth/register", json={
-        "email": email, "password": pw, "full_name": "Up User", "role": "student"
-    })
-    r = await client.post(
-        "/api/auth/token",
-        data={"username": email, "password": pw},
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    return r.json()["access_token"]
-
-
-async def _create_project(client, token, framework="PIT"):
-    r = await client.post(
-        "/api/projects",
-        json={"name": "Test Project", "framework": framework, "loc": 0},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    return r.json()["id"]
-
-
-def _make_zip(files: dict[str, str]) -> bytes:
-    """Build an in-memory zip with the given filename→content mapping."""
+def _make_zip(files: dict) -> bytes:
+    """Create an in-memory ZIP with the given filename→content mapping."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for name, content in files.items():
@@ -87,189 +19,175 @@ def _make_zip(files: dict[str, str]) -> bytes:
     return buf.getvalue()
 
 
-def _make_tar(files: dict[str, str]) -> bytes:
-    """Build an in-memory tar.gz with the given filename→content mapping."""
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-        for name, content in files.items():
-            data = content.encode()
-            info = tarfile.TarInfo(name=name)
-            info.size = len(data)
-            tf.addfile(info, io.BytesIO(data))
-    return buf.getvalue()
+@pytest.fixture(scope="module")
+def client():
+    asyncio.run(create_tables())
+    with TestClient(app) as c:
+        yield c
 
 
-# ── Tests ─────────────────────────────────────────────────────────────────────
+@pytest.fixture(scope="module")
+def auth_headers(client):
+    client.post("/api/auth/register", json={
+        "email": "upload@example.com",
+        "password": "Upload@1234",
+        "first_name": "Upload",
+        "last_name": "Tester",
+    })
+    # Manually verify the user so session creation is allowed
+    import asyncio
+    from db.database import AsyncSessionLocal
+    from db.repositories.repositories import UserRepository
+    async def _verify():
+        async with AsyncSessionLocal() as db:
+            repo = UserRepository(db)
+            user = await repo.get_by_email("upload@example.com")
+            if user:
+                await repo.update(user, is_verified=True)
+                await db.commit()
+    asyncio.run(_verify())
+    r = client.post("/api/auth/token",
+                    data={"username": "upload@example.com", "password": "Upload@1234"})
+    token = r.json().get("access_token", "")
+    return {"Authorization": f"Bearer {token}"}
 
-class TestUploadValidation:
-    @pytest.mark.asyncio
-    async def test_upload_requires_auth(self, client):
-        r = await client.post("/api/projects/fake-id/upload",
-                              files={"file": ("a.zip", b"x", "application/zip")})
+
+@pytest.fixture(scope="module")
+def java_session_id(client, auth_headers):
+    r = client.post("/api/sessions",
+                    json={"name": "JavaUploadTest", "language": "java"},
+                    headers=auth_headers)
+    return r.json()["id"]
+
+
+@pytest.fixture(scope="module")
+def js_session_id(client, auth_headers):
+    r = client.post("/api/sessions",
+                    json={"name": "JSUploadTest", "language": "javascript"},
+                    headers=auth_headers)
+    return r.json()["id"]
+
+
+class TestSessionCreate:
+    def test_create_java_session(self, client, auth_headers):
+        r = client.post("/api/sessions",
+                        json={"name": "MyJavaSession", "language": "java"},
+                        headers=auth_headers)
+        assert r.status_code == 201
+        assert r.json()["status"] == "not_started"
+        assert r.json()["language"] == "java"
+
+    def test_create_js_session(self, client, auth_headers):
+        r = client.post("/api/sessions",
+                        json={"name": "MyJSSession", "language": "javascript"},
+                        headers=auth_headers)
+        assert r.status_code == 201
+        assert r.json()["language"] == "javascript"
+
+    def test_invalid_language_rejected(self, client, auth_headers):
+        r = client.post("/api/sessions",
+                        json={"name": "BadLang", "language": "python"},
+                        headers=auth_headers)
+        assert r.status_code == 422
+
+    def test_empty_name_rejected(self, client, auth_headers):
+        r = client.post("/api/sessions",
+                        json={"name": "", "language": "java"},
+                        headers=auth_headers)
+        assert r.status_code == 422
+
+    def test_requires_auth(self, client):
+        r = client.post("/api/sessions",
+                        json={"name": "Test", "language": "java"})
         assert r.status_code == 401
-
-    @pytest.mark.asyncio
-    async def test_upload_project_not_found(self, client):
-        token = await _register_login(client)
-        r = await client.post(
-            "/api/projects/nonexistent/upload",
-            files={"file": ("a.zip", b"x", "application/zip")},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_unsupported_extension_rejected(self, client):
-        token  = await _register_login(client)
-        proj   = await _create_project(client, token)
-        r = await client.post(
-            f"/api/projects/{proj}/upload",
-            files={"file": ("project.rar", b"x", "application/octet-stream")},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert r.status_code == 415
-
-    @pytest.mark.asyncio
-    async def test_invalid_zip_rejected(self, client):
-        token = await _register_login(client)
-        proj  = await _create_project(client, token)
-        r = await client.post(
-            f"/api/projects/{proj}/upload",
-            files={"file": ("broken.zip", b"not a zip file", "application/zip")},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert r.status_code == 422
-
-    @pytest.mark.asyncio
-    async def test_missing_pom_rejected(self, client):
-        """Java project zip without pom.xml or build.gradle should be rejected."""
-        token = await _register_login(client)
-        proj  = await _create_project(client, token, "PIT")
-        zdata = _make_zip({"src/Main.java": "public class Main {}"})
-        r = await client.post(
-            f"/api/projects/{proj}/upload",
-            files={"file": ("project.zip", zdata, "application/zip")},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert r.status_code == 422
-        assert "pom.xml" in r.json()["detail"] or "build.gradle" in r.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_missing_package_json_rejected(self, client):
-        """JS project zip without package.json should be rejected."""
-        token = await _register_login(client)
-        proj  = await _create_project(client, token, "STRYKER")
-        zdata = _make_zip({"src/index.js": "const x = 1;"})
-        r = await client.post(
-            f"/api/projects/{proj}/upload",
-            files={"file": ("project.zip", zdata, "application/zip")},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert r.status_code == 422
-        assert "package.json" in r.json()["detail"]
 
 
 class TestUploadSuccess:
-    @pytest.mark.asyncio
-    async def test_valid_java_zip_accepted(self, client):
-        token = await _register_login(client)
-        proj  = await _create_project(client, token, "PIT")
-        zdata = _make_zip({
-            "pom.xml": "<project><version>1.0</version></project>",
-            "src/main/java/Foo.java": "public class Foo { public int add(int a, int b) { return a + b; } }",
-            "src/test/java/FooTest.java": "@Test public void testAdd() {}",
+    def test_valid_java_zip_accepted(self, client, auth_headers, java_session_id):
+        zip_data = _make_zip({
+            "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>",
+            "src/main/java/Calculator.java": "public class Calculator { }",
+            "src/test/java/CalculatorTest.java": "@Test public void test() { }",
         })
-        r = await client.post(
-            f"/api/projects/{proj}/upload",
-            files={"file": ("java-project.zip", zdata, "application/zip")},
-            headers={"Authorization": f"Bearer {token}"},
+        r = client.post(
+            f"/api/sessions/{java_session_id}/upload",
+            files={"file": ("project.zip", zip_data, "application/zip")},
+            headers=auth_headers,
         )
         assert r.status_code == 200
-        body = r.json()
-        assert body["id"] == proj
-        assert body["upload_path"] is not None
+        data = r.json()
+        assert data["status"] == "uploaded"
+        assert data["detected_framework"] == "PIT"
+        assert data["upload_filename"] == "project.zip"
 
-    @pytest.mark.asyncio
-    async def test_valid_js_zip_accepted(self, client):
-        token = await _register_login(client)
-        proj  = await _create_project(client, token, "STRYKER")
-        zdata = _make_zip({
-            "package.json": json.dumps({"name": "myapp", "version": "1.0.0"}),
-            "src/app.js": "function add(a, b) { return a + b; }",
-            "src/app.test.js": "test('adds', () => {});",
+    def test_valid_js_zip_accepted(self, client, auth_headers, js_session_id):
+        zip_data = _make_zip({
+            "package.json": '{"name":"test","version":"1.0.0"}',
+            "src/index.js": "module.exports = { add: (a,b) => a+b };",
+            "src/index.test.js": "test('adds', () => {});",
         })
-        r = await client.post(
-            f"/api/projects/{proj}/upload",
-            files={"file": ("js-project.zip", zdata, "application/zip")},
-            headers={"Authorization": f"Bearer {token}"},
+        r = client.post(
+            f"/api/sessions/{js_session_id}/upload",
+            files={"file": ("js-project.zip", zip_data, "application/zip")},
+            headers=auth_headers,
         )
         assert r.status_code == 200
+        data = r.json()
+        assert data["detected_framework"] == "Stryker"
 
-    @pytest.mark.asyncio
-    async def test_tar_gz_accepted(self, client):
-        token = await _register_login(client)
-        proj  = await _create_project(client, token, "PIT")
-        tdata = _make_tar({
-            "pom.xml": "<project/>",
-            "src/main/java/App.java": "public class App {}",
-        })
-        r = await client.post(
-            f"/api/projects/{proj}/upload",
-            files={"file": ("project.tar.gz", tdata, "application/gzip")},
-            headers={"Authorization": f"Bearer {token}"},
+
+class TestUploadValidation:
+    def test_non_zip_rejected(self, client, auth_headers, java_session_id):
+        r = client.post(
+            f"/api/sessions/{java_session_id}/upload",
+            files={"file": ("project.tar.gz", b"fake content", "application/gzip")},
+            headers=auth_headers,
         )
-        assert r.status_code == 200
+        assert r.status_code == 415
 
-    @pytest.mark.asyncio
-    async def test_upload_updates_project_record(self, client):
-        token = await _register_login(client)
-        proj  = await _create_project(client, token, "PIT")
-        java_code = "\n".join([
-            "public class Big {",
-            "    public int add(int a, int b) { return a + b; }",
-            "    public int sub(int a, int b) { return a - b; }",
-            "}",
-        ])
-        zdata = _make_zip({
-            "pom.xml": "<project/>",
-            "src/main/java/Big.java": java_code,
-            "src/test/java/BigTest.java": "@Test\npublic void testAdd(){}\n@Test\npublic void testSub(){}",
+    def test_java_without_pom_rejected(self, client, auth_headers):
+        r = client.post("/api/sessions",
+                        json={"name": "NoPomSession", "language": "java"},
+                        headers=auth_headers)
+        sid = r.json()["id"]
+        zip_data = _make_zip({
+            "src/Calculator.java": "public class Calculator { }",
         })
-        r = await client.post(
-            f"/api/projects/{proj}/upload",
-            files={"file": ("big.zip", zdata, "application/zip")},
-            headers={"Authorization": f"Bearer {token}"},
+        r2 = client.post(
+            f"/api/sessions/{sid}/upload",
+            files={"file": ("nopom.zip", zip_data, "application/zip")},
+            headers=auth_headers,
         )
-        assert r.status_code == 200
-        body = r.json()
-        # LOC and test count should be scanned and stored
-        assert body["loc"] >= 0
-        assert body["test_count"] >= 0
+        assert r2.status_code == 422
 
-    @pytest.mark.asyncio
-    async def test_re_upload_overwrites(self, client):
-        """Uploading twice to the same project should succeed (replaces prior upload)."""
-        token = await _register_login(client)
-        proj  = await _create_project(client, token, "PIT")
-        zdata = _make_zip({"pom.xml": "<project/>", "src/main/java/A.java": "class A {}"})
-        for _ in range(2):
-            r = await client.post(
-                f"/api/projects/{proj}/upload",
-                files={"file": ("p.zip", zdata, "application/zip")},
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            assert r.status_code == 200
+    def test_js_without_package_json_rejected(self, client, auth_headers):
+        r = client.post("/api/sessions",
+                        json={"name": "NoPkgSession", "language": "javascript"},
+                        headers=auth_headers)
+        sid = r.json()["id"]
+        zip_data = _make_zip({
+            "src/index.js": "const x = 1;",
+        })
+        r2 = client.post(
+            f"/api/sessions/{sid}/upload",
+            files={"file": ("nopkg.zip", zip_data, "application/zip")},
+            headers=auth_headers,
+        )
+        assert r2.status_code == 422
 
-    @pytest.mark.asyncio
-    async def test_user_isolation(self, client):
-        """User B cannot upload to User A's project."""
-        token_a = await _register_login(client, "a@feu.edu.ph")
-        token_b = await _register_login(client, "b@feu.edu.ph", "Password456")
-        proj_a  = await _create_project(client, token_a, "PIT")
-        zdata   = _make_zip({"pom.xml": "<project/>"})
-        r = await client.post(
-            f"/api/projects/{proj_a}/upload",
-            files={"file": ("p.zip", zdata, "application/zip")},
-            headers={"Authorization": f"Bearer {token_b}"},
+    def test_upload_requires_auth(self, client, java_session_id):
+        zip_data = _make_zip({"pom.xml": "<project/>"})
+        r = client.post(
+            f"/api/sessions/{java_session_id}/upload",
+            files={"file": ("p.zip", zip_data, "application/zip")},
+        )
+        assert r.status_code == 401
+
+    def test_wrong_session_returns_404(self, client, auth_headers):
+        zip_data = _make_zip({"pom.xml": "<project/>"})
+        r = client.post(
+            "/api/sessions/nonexistent-id/upload",
+            files={"file": ("p.zip", zip_data, "application/zip")},
+            headers=auth_headers,
         )
         assert r.status_code == 404

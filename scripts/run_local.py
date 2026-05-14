@@ -1,46 +1,39 @@
-#!/usr/bin/env python3
 """
 scripts/run_local.py
-Convenience launcher for local development on Windows.
+Starts the FastAPI development server with auto-reload.
+Use this for local development — NOT for production.
 
 Usage:
-    python scripts/run_local.py
-    python scripts/run_local.py --port 8080 --reload
+    PYTHONPATH=. python scripts/run_local.py
 """
-
-import argparse
 import os
 import sys
+from pathlib import Path
 
-# Ensure project root is on the path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Set local dev defaults if not already configured
+os.environ.setdefault("IMPT_DEBUG", "true")
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./impt_local.db")
+os.environ.setdefault("DATABASE_URL_SYNC", "sqlite:///./impt_local.db")
+os.environ.setdefault("SECRET_KEY", "local-dev-secret-key-not-for-production-32c")
+os.environ.setdefault("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000")
+os.environ.setdefault("UPLOAD_DIR", "./uploads")
 
 import uvicorn
 
-
-def main():
-    parser = argparse.ArgumentParser(description="Run IMPT API locally")
-    parser.add_argument("--host",   default="127.0.0.1")
-    parser.add_argument("--port",   default=8000, type=int)
-    parser.add_argument("--reload", action="store_true", default=True)
-    parser.add_argument("--no-reload", dest="reload", action="store_false")
-    args = parser.parse_args()
-
-    print(f"\n{'═'*55}")
-    print("  IMPT API — Local Development Server")
-    print(f"  http://{args.host}:{args.port}")
-    print(f"  Docs: http://{args.host}:{args.port}/docs")
-    print(f"  Health: http://{args.host}:{args.port}/api/health")
-    print(f"{'═'*55}\n")
+if __name__ == "__main__":
+    print("\n" + "="*55)
+    print("  IMPT Local Development Server")
+    print("  API:  http://127.0.0.1:8000")
+    print("  Docs: http://127.0.0.1:8000/docs")
+    print("  DB:   SQLite (impt_local.db)")
+    print("="*55 + "\n")
 
     uvicorn.run(
         "main:app",
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
         log_level="info",
     )
-
-
-if __name__ == "__main__":
-    main()

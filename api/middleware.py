@@ -1,118 +1,73 @@
-"""
-api/middleware.py
-Security middleware for the IMPT FastAPI application.
-
-Provides:
-  - RateLimitMiddleware  — per-IP sliding window rate limit (in-memory, no Redis dep)
-  - RequestSizeMiddleware — enforce MAX_UPLOAD_BYTES hard limit at middleware level
-
-Both are lightweight and have no external dependencies.
-"""
-
+"""api/middleware.py — Security middleware."""
 from __future__ import annotations
 
+import logging
 import time
 from collections import defaultdict, deque
-from typing import Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
-from starlette.types import ASGIApp
 
 from config.settings import get_settings
 
+log = logging.getLogger(__name__)
 settings = get_settings()
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Sliding window rate limiter.
-    Allows up to `max_requests` per `window_seconds` per client IP.
-    Auth endpoints have a tighter limit to slow brute-force attempts.
-
-    Note: Uses an in-memory store — resets on restart and is not shared
-    across multiple API workers. For multi-worker deployments, swap the
-    store with a Redis-backed solution using the same interface.
+    NFR008: 100 req/min general, 10 req/min for auth/upload endpoints.
     """
 
-    def __init__(
-        self,
-        app: ASGIApp,
-        max_requests: int = 60,
-        window_seconds: int = 60,
-        auth_max_requests: int = 10,   # stricter limit for /api/auth/token
-    ) -> None:
+    def __init__(self, app):
         super().__init__(app)
-        self.max_requests      = max_requests
-        self.window_seconds    = window_seconds
-        self.auth_max_requests = auth_max_requests
-        # ip → deque of request timestamps
-        self._store: defaultdict[str, deque] = defaultdict(deque)
+        self._windows: dict = defaultdict(deque)
+        self._exempt = {"/api/health", "/docs", "/redoc", "/openapi.json"}
+        self._tight  = {"/api/auth/token", "/api/auth/register", "/api/auth/admin-token",
+                        "/api/auth/forgot-password", "/api/auth/reset-password"}
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Skip rate-limiting for health checks
-        if request.url.path in ("/api/health", "/", "/docs", "/redoc", "/openapi.json"):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+
+        # Exempt paths
+        if path in self._exempt or path.startswith("/docs"):
             return await call_next(request)
 
-        ip    = self._get_ip(request)
-        now   = time.monotonic()
-        limit = (
-            self.auth_max_requests
-            if "/auth/token" in request.url.path
-            else self.max_requests
-        )
+        ip  = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
+        key = f"{ip}:{path}"
+        now = time.monotonic()
 
-        window = self._store[ip]
-        # Evict timestamps outside the current window
-        cutoff = now - self.window_seconds
-        while window and window[0] < cutoff:
-            window.popleft()
+        window_size = 60  # seconds
+        limit = 10 if path in self._tight else settings.RATE_LIMIT_REQUESTS_PER_MINUTE
 
-        if len(window) >= limit:
-            retry_after = int(self.window_seconds - (now - window[0])) + 1
-            return JSONResponse(
+        dq = self._windows[key]
+        while dq and dq[0] < now - window_size:
+            dq.popleft()
+
+        if len(dq) >= limit:
+            retry_after = int(window_size - (now - dq[0]))
+            return Response(
+                content='{"detail": "Too many requests. Please wait before retrying."}',
                 status_code=429,
-                content={"detail": "Too many requests. Please slow down."},
+                media_type="application/json",
                 headers={"Retry-After": str(retry_after)},
             )
 
-        window.append(now)
+        dq.append(now)
         return await call_next(request)
-
-    @staticmethod
-    def _get_ip(request: Request) -> str:
-        # Respect X-Forwarded-For from Nginx
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        return request.client.host if request.client else "unknown"
 
 
 class RequestSizeMiddleware(BaseHTTPMiddleware):
-    """
-    Rejects requests whose Content-Length exceeds MAX_UPLOAD_BYTES.
-    Provides a clean 413 before FastAPI even reads the body.
-    Only enforced on upload endpoints to avoid blocking small API calls.
-    """
+    """Reject oversized uploads before FastAPI reads the body."""
 
-    UPLOAD_PATHS = ("/upload",)
-
-    def __init__(self, app: ASGIApp, max_bytes: int = 0) -> None:
-        super().__init__(app)
-        self.max_bytes = max_bytes or settings.MAX_UPLOAD_BYTES
-
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        if any(seg in request.url.path for seg in self.UPLOAD_PATHS):
+    async def dispatch(self, request: Request, call_next):
+        if "upload" in request.url.path:
             content_length = request.headers.get("content-length")
-            if content_length and int(content_length) > self.max_bytes:
-                return JSONResponse(
+            if content_length and int(content_length) > settings.MAX_UPLOAD_BYTES:
+                return Response(
+                    content=f'{{"detail": "File size exceeds {settings.MAX_UPLOAD_MB}MB limit."}}',
                     status_code=413,
-                    content={
-                        "detail": (
-                            f"Request body too large. "
-                            f"Maximum upload size is {settings.MAX_UPLOAD_MB} MB."
-                        )
-                    },
+                    media_type="application/json",
                 )
         return await call_next(request)

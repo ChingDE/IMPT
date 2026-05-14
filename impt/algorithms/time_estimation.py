@@ -1,189 +1,56 @@
-"""
-impt/algorithms/time_estimation.py
-Algorithm 5 — Execution Time Estimator
-=======================================
-Predicts the wall-clock time required to run the test suite against a
-single mutant.  Used by the Time-Budget Optimizer (Algorithm 3) to assign
-knapsack weights before any mutant is actually executed.
-
-Hybrid approach (Section 3.5.2):
-  1. Cache hit  → return cached value          O(1)
-  2. Base time  = LOC × per-LOC rate + tests × test_overhead
-  3. Operator multiplier (calibrated vs 50 FOSS projects)
-  4. Complexity adjustment (+5 % per cyclomatic unit above 10)
-  5. Historical calibration (if ≥ 10 previous runs available)
-  6. +15 % safety margin
-
-Typical accuracy: ±15 % of actual execution time.
-"""
-
+"""impt/algorithms/time_estimation.py — Algorithm 5: Execution Time Estimator."""
 from __future__ import annotations
+from typing import Dict, List, Tuple
+from impt.models.mutant import Mutant
+from impt.models.project import Project
 
-import logging
-from typing import Dict, Optional, Tuple
-
-from impt.models.mutant import Mutant, MutationOperator
-from impt.models.project import MutationFramework, Project
-
-log = logging.getLogger(__name__)
-
-# Per-operator execution time multipliers (calibrated empirically)
-# Operators that cause earlier test-suite short-circuit get lower values.
-OPERATOR_MULTIPLIERS: Dict[str, float] = {
-    MutationOperator.AOR.value:           1.0,
-    MutationOperator.ROR.value:           1.1,
-    MutationOperator.ABS.value:           1.1,
-    MutationOperator.COR.value:           0.9,
-    MutationOperator.LCR.value:           1.2,
-    MutationOperator.SOR.value:           0.8,
-    MutationOperator.UOI.value:           0.7,   # fastest: fails early
-    MutationOperator.SDL.value:           1.3,   # slowest: recompile needed
-    MutationOperator.VDL.value:           1.1,
-    MutationOperator.ODL.value:           1.0,
-    MutationOperator.NEGATE_RETURN.value: 1.1,
-    MutationOperator.NULL_RETURN.value:   1.0,
+OP_MULTIPLIERS: Dict[str, float] = {
+    "SDL": 1.3, "AOR": 1.1, "ROR": 1.1, "COR": 1.0,
+    "LCR": 1.0, "SOR": 0.9, "VDL": 1.2, "ODL": 1.1,
+    "UOI": 0.7, "NULL_RETURN": 0.9, "NEGATE_RETURN": 0.9,
 }
-
-SAFETY_MARGIN = 1.15          # 15 % buffer (conservative estimation)
-TEST_OVERHEAD  = 0.05         # seconds per test case
-MIN_TIME_FLOOR = 1.0          # floor: no mutant runs in < 1 second
-COMPLEXITY_THRESHOLD  = 10    # cyclomatic complexity threshold
-COMPLEXITY_RATE       = 0.05  # +5 % per unit above threshold
+SAFETY_MARGIN     = 1.15
+FLOOR_SECONDS     = 1.0
+CC_THRESHOLD      = 10
+CC_ADJUSTMENT_PCT = 0.05
 
 
 class ExecutionTimeEstimator:
-    """
-    Estimates the execution time for each mutant so the optimizer can
-    use these as knapsack weights.
-
-    Parameters
-    ----------
-    project : Project
-        The project being tested (supplies LOC, test_count, framework).
-    history : dict, optional
-        Maps (project_id, operator, location_key) tuples to observed
-        execution times from previous sessions.  Used for calibration.
-    """
-
-    def __init__(
-        self,
-        project: Project,
-        history: Optional[Dict[Tuple, float]] = None,
-    ) -> None:
-        self.project = project
-        self.history: Dict[Tuple, float] = history or {}
-        self._cache: Dict[str, float] = {}
-
-        # Calibration ratio (computed once from history if available)
-        self._calibration_ratio = self._compute_calibration_ratio()
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    def __init__(self, project: Project):
+        self.project    = project
+        self._cache:    Dict[str, float]            = {}
+        self._observed: List[Tuple[float, float]]   = []
 
     def estimate(self, mutant: Mutant) -> float:
-        """
-        Return the estimated execution time in seconds for this mutant.
-        Also sets mutant.execution_time in place.
-        """
-        cache_key = self._cache_key(mutant)
-
-        # 1. Cache hit
+        cache_key = f"{mutant.operator.value}:{mutant.location.key()}"
         if cache_key in self._cache:
-            t = self._cache[cache_key]
-            mutant.execution_time = t
-            return t
+            return self._cache[cache_key]
 
-        # 2. Base time
-        t = self._base_time()
+        base   = (self.project.loc * self.project.base_execution_time_per_loc() +
+                  self.project.test_count * 0.05)
+        op_mul = OP_MULTIPLIERS.get(mutant.operator.value, 1.0)
+        est    = base * op_mul
 
-        # 3. Operator multiplier
-        op_mult = OPERATOR_MULTIPLIERS.get(mutant.operator.value, 1.0)
-        t *= op_mult
-
-        # 4. Complexity adjustment
         cc = mutant.factors.cyclomatic_complexity
-        if cc > COMPLEXITY_THRESHOLD:
-            t *= 1.0 + COMPLEXITY_RATE * (cc - COMPLEXITY_THRESHOLD)
+        if cc > CC_THRESHOLD:
+            est *= (1 + (cc - CC_THRESHOLD) * CC_ADJUSTMENT_PCT)
 
-        # 5. Historical calibration
-        t *= self._calibration_ratio
+        if len(self._observed) >= 10:
+            actual_times    = [a for _, a in self._observed]
+            predicted_times = [p for p, _ in self._observed]
+            ratio = (sum(actual_times) / sum(predicted_times))
+            ratio = max(0.5, min(2.0, ratio))
+            est  *= ratio
 
-        # 6. Safety margin + floor
-        t = max(MIN_TIME_FLOOR, t * SAFETY_MARGIN)
-        t = round(t, 3)
+        est = max(FLOOR_SECONDS, est * SAFETY_MARGIN)
+        self._cache[cache_key] = est
+        return est
 
-        self._cache[cache_key] = t
-        mutant.execution_time  = t
-        return t
-
-    def estimate_population(self, mutants: list) -> list:
-        """
-        Estimate times for an entire mutant list in place.
-        Returns the same list with execution_time fields populated.
-        """
+    def estimate_population(self, mutants: List[Mutant]) -> None:
         for m in mutants:
-            self.estimate(m)
-        return mutants
+            m.execution_time = self.estimate(m)
 
-    def update_history(self, mutant: Mutant, actual_time: float) -> None:
-        """
-        Call this after a mutant actually executes to feed observed
-        times back into the calibration history for future sessions.
-        """
-        key = self._history_key(mutant)
-        self.history[key] = actual_time
-        # Refresh calibration
-        self._calibration_ratio = self._compute_calibration_ratio()
-
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
-    def _base_time(self) -> float:
-        """
-        Base time = LOC contribution + test-suite overhead.
-        """
-        loc_rate = self.project.base_execution_time_per_loc()
-        loc_time  = self.project.loc * loc_rate
-        test_time = self.project.test_count * TEST_OVERHEAD
-        return loc_time + test_time
-
-    def _compute_calibration_ratio(self) -> float:
-        """
-        If ≥ 10 historical observations exist for this project, compute
-        the mean(actual) / mean(predicted_at_time) ratio.
-        We approximate predicted using base_time only (no multipliers) as
-        a stable denominator.
-        """
-        if not self.history or len(self.history) < 10:
-            return 1.0   # no calibration data yet
-
-        actuals = list(self.history.values())
-        base    = self._base_time() or 1.0
-        predicted = [base] * len(actuals)   # simplified: same base for all
-
-        mean_actual    = sum(actuals) / len(actuals)
-        mean_predicted = sum(predicted) / len(predicted)
-
-        if mean_predicted <= 0:
-            return 1.0
-
-        ratio = mean_actual / mean_predicted
-        # Clamp to [0.5, 2.0] to prevent wild outliers
-        return max(0.5, min(2.0, ratio))
-
-    def _base_time_no_calibration(self) -> float:
-        """Alias used internally for calibration computation."""
-        return self._base_time()
-
-    @staticmethod
-    def _cache_key(mutant: Mutant) -> str:
-        return f"{mutant.operator.value}|{mutant.location.key()}"
-
-    def _history_key(self, mutant: Mutant) -> tuple:
-        return (
-            self.project.name,
-            mutant.operator.value,
-            mutant.location.key(),
-        )
+    def record_actual(self, predicted: float, actual: float) -> None:
+        self._observed.append((predicted, actual))
+        if len(self._observed) > 100:
+            self._observed.pop(0)

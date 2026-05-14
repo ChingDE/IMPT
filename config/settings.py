@@ -1,25 +1,19 @@
 """
 config/settings.py
-Central configuration — all values read from environment variables.
-
-Local dev defaults work without any .env file (SQLite + no Redis).
-Production values come from the .env file on the DigitalOcean Droplet.
+All configuration read from environment variables.
+Local dev defaults work without any .env file (SQLite + no Redis + no email).
 """
-
 from __future__ import annotations
-
 import os
 from functools import lru_cache
 
 
 class Settings:
     APP_NAME:    str = "IMPT — Intelligent Mutation Prioritization Tool"
-    APP_VERSION: str = "1.0.0"
+    APP_VERSION: str = "2.0.0"
     DEBUG: bool      = os.getenv("IMPT_DEBUG", "true").lower() == "true"
 
-    # ── Database ──────────────────────────────────────────────────────────────
-    # Production  → DigitalOcean Managed PostgreSQL (set in .env)
-    # Local dev   → SQLite (no setup required)
+    # ── Database ──────────────────────────────────────────────────────
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL", "sqlite+aiosqlite:///./impt_local.db"
     )
@@ -27,9 +21,7 @@ class Settings:
         "DATABASE_URL_SYNC", "sqlite:///./impt_local.db"
     )
 
-    # ── Redis / Celery ────────────────────────────────────────────────────────
-    # Production  → Upstash (rediss:// TLS — handled automatically in celery_app.py)
-    # Local dev   → localhost plain Redis, or sync fallback if Redis is absent
+    # ── Redis / Celery ─────────────────────────────────────────────────
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     CELERY_BROKER_URL: str = os.getenv(
         "CELERY_BROKER_URL", os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -38,7 +30,7 @@ class Settings:
         "CELERY_RESULT_BACKEND", os.getenv("REDIS_URL", "redis://localhost:6379/0")
     )
 
-    # ── Auth ──────────────────────────────────────────────────────────────────
+    # ── Auth ───────────────────────────────────────────────────────────
     SECRET_KEY: str = os.getenv(
         "SECRET_KEY", "impt-dev-secret-key-change-in-production-32chars"
     )
@@ -47,14 +39,31 @@ class Settings:
         os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
     )
 
-    # ── Upload / Storage ──────────────────────────────────────────────────────
+    # ── Email — Resend ─────────────────────────────────────────────────
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    EMAIL_FROM: str     = os.getenv("EMAIL_FROM", "IMPT <noreply@impt.it.com>")
+    EMAIL_ENABLED: bool = bool(os.getenv("RESEND_API_KEY", ""))
+
+    # ── Token expiry ───────────────────────────────────────────────────
+    EMAIL_VERIFICATION_EXPIRE_HOURS: int = int(
+        os.getenv("EMAIL_VERIFICATION_EXPIRE_HOURS", "24")
+    )
+    PASSWORD_RESET_EXPIRE_HOURS: int = int(
+        os.getenv("PASSWORD_RESET_EXPIRE_HOURS", "1")
+    )
+
+    # ── Frontend URL (for email links) ─────────────────────────────────
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+    # ── Upload / Storage ───────────────────────────────────────────────
     UPLOAD_DIR: str    = os.getenv("UPLOAD_DIR", "./uploads")
     MAX_UPLOAD_MB: int = int(os.getenv("MAX_UPLOAD_MB", "50"))
     MAX_UPLOAD_BYTES: int = MAX_UPLOAD_MB * 1024 * 1024
 
-    # ── CORS ──────────────────────────────────────────────────────────────────
-    # Production  → your Vercel URL + custom domain (set in .env)
-    # Local dev   → localhost dev servers
+    # ── File retention ─────────────────────────────────────────────────
+    FILE_RETENTION_DAYS: int = int(os.getenv("FILE_RETENTION_DAYS", "90"))
+
+    # ── CORS ───────────────────────────────────────────────────────────
     ALLOWED_ORIGINS: list = [
         o.strip()
         for o in os.getenv(
@@ -64,17 +73,22 @@ class Settings:
         if o.strip()
     ]
 
-    # ── Rate limiting ─────────────────────────────────────────────────────────
+    # ── Rate limiting ──────────────────────────────────────────────────
     RATE_LIMIT_REQUESTS_PER_MINUTE: int = int(
-        os.getenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "60")
+        os.getenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "100")
+    )
+    LOGIN_MAX_ATTEMPTS: int = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
+    LOGIN_LOCKOUT_MINUTES: int = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
+
+    # ── Session timeout ────────────────────────────────────────────────
+    SESSION_TIMEOUT_MINUTES: int = int(
+        os.getenv("SESSION_TIMEOUT_MINUTES", "30")
+    )
+    SESSION_WARNING_MINUTES: int = int(
+        os.getenv("SESSION_WARNING_MINUTES", "2")
     )
 
-    # ── Engine defaults ───────────────────────────────────────────────────────
-    DEFAULT_TIME_BUDGET_SECONDS: int = 1800
-    MIN_TIME_BUDGET_SECONDS: int     = 60
-    MAX_TIME_BUDGET_SECONDS: int     = 3600
-
-    # ── Watchdog ──────────────────────────────────────────────────────────────
+    # ── Watchdog ───────────────────────────────────────────────────────
     JOB_TIMEOUT_WATCHDOG_SECONDS: int = int(
         os.getenv("JOB_TIMEOUT_WATCHDOG_SECONDS", "3900")
     )

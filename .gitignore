@@ -1,42 +1,14 @@
-# ── Secrets — NEVER commit ────────────────────────────────────────────────────
 .env
-*.pem
-*.key
-
-# ── Python ────────────────────────────────────────────────────────────────────
-__pycache__/
 *.pyc
-*.pyo
-*.egg-info/
-.Python
-dist/
-build/
-
-# ── Local dev database ────────────────────────────────────────────────────────
-impt_local.db
-*.db
-*.sqlite3
-
-# ── Uploads (user data — never in git) ───────────────────────────────────────
-uploads/
-
-# ── Test artifacts ────────────────────────────────────────────────────────────
+__pycache__/
 .pytest_cache/
+impt_local.db
+uploads/
 .coverage
 htmlcov/
-coverage.xml
-
-# ── Frontend ──────────────────────────────────────────────────────────────────
-frontend/src/node_modules/
-frontend/dist/
-# Vercel builds dist/ itself from frontend/src/ — don't commit the build output
-
-# ── Celery ────────────────────────────────────────────────────────────────────
 celerybeat-schedule
 celerybeat.pid
-
-# ── IDE ───────────────────────────────────────────────────────────────────────
-.vscode/
-.idea/
-*.swp
-.DS_Store
+frontend/src/node_modules/
+frontend/dist/
+*.egg-info/
+.venv/

@@ -1,63 +1,53 @@
-"""
-tests/conftest.py
-Shared pytest fixtures for the IMPT test suite.
-"""
-
+"""tests/conftest.py — Shared fixtures for all test suites."""
 import pytest
 from impt.models.mutant import (
-    CodeLocation,
-    ExecutionStatus,
-    Mutant,
-    MutationOperator,
-    PriorityFactors,
+    CodeLocation, Mutant, MutationOperator, PriorityFactors, ExecutionStatus
 )
-from impt.models.project import MutationFramework, Project, ProjectConfig
-
-
-# ---------------------------------------------------------------------------
-# Basic building blocks
-# ---------------------------------------------------------------------------
-
-
-def make_location(file="Foo.java", line=10, col=0, method="doStuff"):
-    return CodeLocation(file=file, line=line, column=col, method=method)
+from impt.models.project import Project, MutationFramework, ProjectConfig
 
 
 def make_mutant(
-    operator=MutationOperator.ROR,
-    file="Foo.java",
-    line=10,
-    col=0,
-    original="x > 0",
-    mutated="x >= 0",
-    historical=0.75,
-    cyclomatic=5.0,
-    cognitive=3.0,
-    nesting=2.0,
-    security=0.0,
-    days=14.0,
-    bugs=1.0,
+    operator=MutationOperator.AOR,
+    file="src/Calculator.java",
+    line=42,
+    original="a + b",
+    mutated="a - b",
+    score=5.0,
+    status=ExecutionStatus.PENDING,
+    execution_time=2.0,
     coverage=None,
+    hist=0.7, cc=8.0, cog=4.0, nest=2.0, sec=0.0, days=15.0, bug=1.0,
 ) -> Mutant:
-    loc = make_location(file=file, line=line, col=col)
+    loc = CodeLocation(file=file, line=line)
     factors = PriorityFactors(
-        historical_effectiveness=historical,
-        cyclomatic_complexity=cyclomatic,
-        cognitive_complexity=cognitive,
-        nesting_depth=nesting,
-        security_score=security,
+        historical_effectiveness=hist,
+        cyclomatic_complexity=cc,
+        cognitive_complexity=cog,
+        nesting_depth=nest,
+        security_score=sec,
         days_since_change=days,
-        bug_density=bugs,
+        bug_density=bug,
     )
-    m = Mutant(
-        operator=operator,
-        location=loc,
-        original_code=original,
-        mutated_code=mutated,
-        factors=factors,
-    )
-    m.test_coverage = set(coverage or [])
+    m = Mutant(operator=operator, location=loc, original_code=original,
+               mutated_code=mutated, factors=factors)
+    m.priority_score  = score
+    m.status          = status
+    m.execution_time  = execution_time
+    m.test_coverage   = coverage if coverage is not None else {f"test_{line}_{i}" for i in range(5)}
     return m
+
+
+def make_project(budget=300, loc=5000, tests=100) -> Project:
+    cfg = ProjectConfig(time_budget_seconds=budget)
+    return Project(
+        name="test-project",
+        framework=MutationFramework.PIT,
+        source_dir="src/",
+        test_dir="src/test/",
+        loc=loc,
+        test_count=tests,
+        config=cfg,
+    )
 
 
 @pytest.fixture
@@ -66,31 +56,24 @@ def sample_mutant():
 
 
 @pytest.fixture
-def sample_population():
-    """A diverse population of 10 mutants covering multiple operators."""
-    return [
-        make_mutant(MutationOperator.ROR, line=1,  historical=0.9, cyclomatic=12, security=1.0, days=2),
-        make_mutant(MutationOperator.AOR, line=2,  historical=0.5, cyclomatic=3,  security=0.0, days=30),
-        make_mutant(MutationOperator.SDL, line=3,  historical=0.3, cyclomatic=8,  security=0.0, days=7),
-        make_mutant(MutationOperator.COR, line=4,  historical=0.8, cyclomatic=6,  security=1.0, days=1),
-        make_mutant(MutationOperator.UOI, line=5,  historical=0.2, cyclomatic=2,  security=0.0, days=60),
-        make_mutant(MutationOperator.LCR, line=6,  historical=0.7, cyclomatic=9,  security=0.5, days=3),
-        make_mutant(MutationOperator.ABS, line=7,  historical=0.6, cyclomatic=4,  security=0.0, days=20),
-        make_mutant(MutationOperator.VDL, line=8,  historical=0.4, cyclomatic=5,  security=0.0, days=10),
-        make_mutant(MutationOperator.SOR, line=9,  historical=0.55, cyclomatic=7, security=0.0, days=5),
-        make_mutant(MutationOperator.ODL, line=10, historical=0.65, cyclomatic=11, security=0.5, days=4),
-    ]
+def sample_project():
+    return make_project()
 
 
 @pytest.fixture
-def simple_project():
-    cfg = ProjectConfig(time_budget_seconds=300, jaccard_threshold=0.90)
-    return Project(
-        name="test-project",
-        framework=MutationFramework.PIT,
-        source_dir="src/",
-        test_dir="test/",
-        loc=5000,
-        test_count=100,
-        config=cfg,
-    )
+def sample_population():
+    ops = list(MutationOperator)
+    files = ["src/Calculator.java", "src/StringUtils.java", "src/Parser.java"]
+    mutants = []
+    for i in range(30):
+        m = make_mutant(
+            operator=ops[i % len(ops)],
+            file=files[i % len(files)],
+            line=i * 5 + 10,
+            coverage={f"t{j}" for j in range(i % 8 + 1)},
+            hist=0.3 + (i % 7) * 0.1,
+            cc=float(i % 15 + 1),
+            days=float(i % 60 + 1),
+        )
+        mutants.append(m)
+    return mutants

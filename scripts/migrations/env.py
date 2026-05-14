@@ -1,69 +1,38 @@
-"""
-scripts/migrations/env.py
-Alembic migration environment — required by Alembic's migration runner.
-Supports both offline (--sql) and online (direct DB connection) modes.
-"""
-
+"""scripts/migrations/env.py — Alembic migration environment."""
 import os
-import sys
 from logging.config import fileConfig
-
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-# Add project root to sys.path so imports work
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from db.database import Base
-from db.models import orm_models  # noqa: F401 — registers all ORM models
+def get_url():
+    return os.getenv("DATABASE_URL_SYNC") or context.config.get_main_option("sqlalchemy.url", "")
 
-# Alembic Config object
+
 config = context.config
-
-# Setup logging from alembic.ini
-if config.config_file_name is not None:
+if config.config_file_name:
     fileConfig(config.config_file_name)
 
-# MetaData for autogenerate support
+config.set_main_option("sqlalchemy.url", get_url())
+
+from db.models.orm_models import Base  # noqa
 target_metadata = Base.metadata
 
 
-def get_url() -> str:
-    """Read sync DATABASE_URL from environment or alembic.ini."""
-    return os.getenv("DATABASE_URL_SYNC") or config.get_main_option("sqlalchemy.url", "")
-
-
-def run_migrations_offline() -> None:
-    """Generate SQL scripts without a live DB connection."""
-    url = get_url()
-    context.configure(
-        url=url,
-        target_metadata=target_metadata,
-        literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
-        compare_type=True,
-    )
+def run_migrations_offline():
+    context.configure(url=get_url(), target_metadata=target_metadata,
+                      literal_binds=True, dialect_opts={"paramstyle": "named"})
     with context.begin_transaction():
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    """Apply migrations against a live DB connection."""
-    cfg = config.get_section(config.config_ini_section, {})
-    cfg["sqlalchemy.url"] = get_url()
-
+def run_migrations_online():
     connectable = engine_from_config(
-        cfg,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
+        config.get_section(config.config_ini_section),
+        prefix="sqlalchemy.", poolclass=pool.NullPool,
     )
-
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
 

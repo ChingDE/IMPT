@@ -1,150 +1,140 @@
-#!/usr/bin/env python3
 """
 cli/run_demo.py
-IMPT Local Demo Runner
-======================
-Simulates a full IMPT session with a synthetic mutant population.
-Use this during white-box testing to verify the pipeline end-to-end
-without needing a real Java/JavaScript project.
+Runs the full 5-algorithm IMPT pipeline with a synthetic mutant population.
+No Docker or real project required — useful for demonstrating the core algorithms.
 
-Usage (from the impt/ project root):
-    python cli/run_demo.py
-    python cli/run_demo.py --mutants 50 --budget 120 --kill-rate 0.75
+Usage:
+    PYTHONPATH=. python cli/run_demo.py --mutants 40 --budget 300 --kill-rate 0.72
 """
-
 import argparse
-import logging
 import random
 import sys
-import os
+from pathlib import Path
 
-# Allow running from project root
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from impt.engine import IMPTEngine, EngineConfig
-from impt.models.mutant import ExecutionStatus, MutationOperator, PriorityFactors
-from impt.models.project import MutationFramework, Project, ProjectConfig
-from tests.conftest import make_mutant
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-    datefmt="%H:%M:%S",
+from impt.models.mutant import (
+    CodeLocation, Mutant, MutationOperator, PriorityFactors, ExecutionStatus,
 )
+from impt.models.project import MutationFramework, Project, ProjectConfig
+from impt.algorithms.optimization import SelectionStrategy
 
 
-def build_synthetic_population(n: int, seed: int = 0) -> list:
-    random.seed(seed)
-    ops = list(MutationOperator)
+def make_synthetic_population(n: int, seed: int = 42) -> list:
+    rng   = random.Random(seed)
+    ops   = list(MutationOperator)
+    files = [
+        "src/Calculator.java", "src/StringUtils.java",
+        "src/Parser.java", "src/Formatter.java", "src/Validator.java",
+    ]
     mutants = []
     for i in range(n):
-        op = ops[i % len(ops)]
-        coverage = [f"test_{j}" for j in random.sample(range(n * 2), k=random.randint(1, 8))]
-        m = make_mutant(
-            operator=op,
-            line=i + 1,
-            historical=round(random.uniform(0.1, 0.95), 2),
-            cyclomatic=round(random.uniform(1.0, 25.0), 1),
-            cognitive=round(random.uniform(1.0, 15.0), 1),
-            nesting=round(random.uniform(1.0, 6.0), 1),
-            security=random.choice([0.0, 0.0, 0.0, 1.0]),  # ~25% security-critical
-            days=round(random.uniform(0.5, 90.0), 1),
-            bugs=round(random.uniform(0.0, 8.0), 2),
-            coverage=coverage,
+        op  = ops[i % len(ops)]
+        loc = CodeLocation(
+            file=files[i % len(files)],
+            line=rng.randint(1, 250),
+            column=0,
         )
+        factors = PriorityFactors(
+            historical_effectiveness=round(rng.uniform(0.1, 0.95), 2),
+            cyclomatic_complexity=round(rng.uniform(1, 20), 1),
+            cognitive_complexity=round(rng.uniform(1, 12), 1),
+            nesting_depth=round(rng.uniform(1, 5), 1),
+            security_score=rng.choice([0.0, 0.0, 0.0, 1.0]),
+            days_since_change=round(rng.uniform(1, 60), 1),
+            bug_density=round(rng.uniform(0, 5), 2),
+        )
+        m = Mutant(
+            operator=op, location=loc,
+            original_code=f"x {op.value} y",
+            mutated_code=f"x {op.value[::-1]} y",
+            factors=factors,
+        )
+        m.test_coverage = {
+            f"Test{j}" for j in rng.sample(range(n * 2), k=rng.randint(1, 8))
+        }
         mutants.append(m)
     return mutants
 
 
-def make_runner(kill_rate: float):
-    """Simulated runner: kills mutants with probability = kill_rate."""
-    def runner(mutant):
-        mutant.status = (
+def make_runner(kill_rate: float, seed: int = 42):
+    rng = random.Random(seed)
+
+    def runner(m: Mutant):
+        m.status = (
             ExecutionStatus.KILLED
-            if random.random() < kill_rate
+            if rng.random() < kill_rate
             else ExecutionStatus.SURVIVED
         )
+        m.execution_time = round(rng.uniform(1.0, 8.0), 2)
+
     return runner
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="IMPT Local Demo — white-box testing runner"
-    )
+    parser = argparse.ArgumentParser(description="IMPT Algorithm Demo")
     parser.add_argument("--mutants",   type=int,   default=30,   help="Number of synthetic mutants")
     parser.add_argument("--budget",    type=int,   default=300,  help="Time budget in seconds")
-    parser.add_argument("--kill-rate", type=float, default=0.70, help="Simulated kill rate [0..1]")
-    parser.add_argument("--loc",       type=int,   default=5000, help="Project LOC")
-    parser.add_argument("--tests",     type=int,   default=100,  help="Number of test cases")
-    parser.add_argument("--seed",      type=int,   default=42,   help="Random seed")
-    parser.add_argument("--strategy",  choices=["auto","dp","greedy"], default="auto")
+    parser.add_argument("--kill-rate", type=float, default=0.70, help="Simulated kill rate 0.0–1.0")
+    parser.add_argument("--strategy",  type=str,   default="auto",
+                        choices=["auto", "dp", "greedy"], help="Optimizer strategy")
     args = parser.parse_args()
 
-    random.seed(args.seed)
-
-    print("\n" + "═" * 60)
-    print("  IMPT — Intelligent Mutation Prioritization Tool")
-    print("  NovaSoft | FEU Institute of Technology")
-    print("═" * 60)
-    print(f"  Mutants    : {args.mutants}")
-    print(f"  Budget     : {args.budget}s")
-    print(f"  Kill rate  : {args.kill_rate:.0%}")
-    print(f"  Strategy   : {args.strategy.upper()}")
-    print("═" * 60 + "\n")
-
-    # ── Project setup ─────────────────────────────────────────────────
-    cfg = ProjectConfig(time_budget_seconds=args.budget)
-    project = Project(
-        name="demo-project",
-        framework=MutationFramework.PIT,
-        source_dir="src/main/java/",
-        test_dir="src/test/java/",
-        loc=args.loc,
-        test_count=args.tests,
-        config=cfg,
-    )
-
-    from impt.algorithms.optimization import SelectionStrategy
-    strategy_map = {
+    strat_map = {
         "auto":   SelectionStrategy.AUTO,
         "dp":     SelectionStrategy.DYNAMIC_PROGRAMMING,
         "greedy": SelectionStrategy.GREEDY,
     }
 
+    print(f"\n{'='*60}")
+    print(f"  IMPT Algorithm Demo")
+    print(f"  Mutants: {args.mutants}  |  Budget: {args.budget}s  |  Kill rate: {args.kill_rate:.0%}")
+    print(f"{'='*60}\n")
+
+    config = ProjectConfig(
+        time_budget_seconds=args.budget,
+        factor_weights={
+            "historical_effectiveness": 0.30,
+            "code_complexity":          0.25,
+            "security_criticality":     0.20,
+            "change_recency":           0.15,
+            "bug_history":              0.10,
+        },
+    )
+    project = Project(
+        name="synthetic-demo",
+        framework=MutationFramework.PIT,
+        source_dir="src/",
+        test_dir="src/test/",
+        loc=5000,
+        test_count=100,
+        config=config,
+    )
     engine_cfg = EngineConfig(
         time_budget_seconds=args.budget,
-        optimizer_strategy=strategy_map[args.strategy],
-        verbose=True,
+        optimizer_strategy=strat_map[args.strategy],
     )
 
-    # ── Mutant population ─────────────────────────────────────────────
-    mutants = build_synthetic_population(args.mutants, seed=args.seed)
+    mutants = make_synthetic_population(args.mutants)
     runner  = make_runner(args.kill_rate)
+    engine  = IMPTEngine(project, config=engine_cfg)
 
-    # ── Run ───────────────────────────────────────────────────────────
-    engine = IMPTEngine(project, config=engine_cfg)
+    print("Running pipeline...")
     result = engine.run(mutants, runner=runner)
 
-    # ── Report ────────────────────────────────────────────────────────
-    print("\n" + "═" * 60)
     print(result.summary())
-    print("═" * 60)
 
     if result.operator_stats:
-        print("\nOperator Breakdown:")
+        print("\nOperator breakdown:")
         for op, stats in sorted(result.operator_stats.items()):
-            print(
-                f"  {op:<20} total={stats['total']:>3}  "
-                f"killed={stats['killed']:>3}  "
-                f"kill_rate={stats['kill_rate']:.0%}"
-            )
+            total  = stats["total"]
+            killed = stats["killed"]
+            rate   = killed / total * 100 if total else 0
+            print(f"  {op:20s} {killed:3d}/{total:3d} killed ({rate:5.1f}%)")
 
-    if result.estimate:
-        print(f"\n{result.estimate.as_percentage()}")
-
-    print("\n✓ Demo complete.\n")
-    return 0
+    print(f"\n{'='*60}")
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

@@ -1,234 +1,108 @@
-"""
-impt/engine.py
-IMPT Core Engine
-================
-Orchestrates the five algorithms in the sequence defined by the
-System IPO (Figure 6 of the manuscript):
-
-  1. Multi-Factor Scoring
-  2. Subsumption Analysis
-  3. Execution Time Estimation
-  4. Time-Budget Optimization (Knapsack)
-  5. [Mutation Execution — delegated to framework adapters or mock runner]
-  6. Statistical Extrapolation
-
-In this module the execution step is handled by a pluggable
-``MutantRunner`` callable.  During white-box testing a mock runner is
-used; for real framework testing the PIT/Stryker adapters plug in here.
-"""
-
+"""impt/engine.py — IMPTEngine: orchestrates all 5 algorithms."""
 from __future__ import annotations
-
-import logging
-import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
+from impt.algorithms.scoring       import MultiFactorScorer
+from impt.algorithms.subsumption   import SubsumptionAnalyzer
+from impt.algorithms.optimization  import TimeBudgetOptimizer, SelectionStrategy
 from impt.algorithms.extrapolation import StatisticalExtrapolator
-from impt.algorithms.optimization import SelectionStrategy, TimeBudgetOptimizer
-from impt.algorithms.scoring import MultiFactorScorer
-from impt.algorithms.subsumption import SubsumptionAnalyzer
 from impt.algorithms.time_estimation import ExecutionTimeEstimator
-from impt.models.mutant import Mutant, ExecutionStatus
+from impt.models.mutant  import Mutant, ExecutionStatus
 from impt.models.project import Project
-from impt.models.result import MutationTestResult
-
-log = logging.getLogger(__name__)
-
-# Type alias: a runner takes a mutant, executes it, sets status + execution_time
-MutantRunner = Callable[[Mutant], None]
-
-
-def _default_mock_runner(mutant: Mutant) -> None:
-    """
-    Placeholder runner used when no real framework adapter is connected.
-    Simulates execution: marks all mutants as SURVIVED (worst-case baseline).
-    Replace this with real PIT/Stryker adapter calls.
-    """
-    mutant.status = ExecutionStatus.SURVIVED
-    # execution_time is already estimated; keep it
+from impt.models.result  import MutationTestResult
 
 
 @dataclass
 class EngineConfig:
-    """Aggregated configuration knob for the engine."""
-    time_budget_seconds: int      = 1800
-    jaccard_threshold: float      = 0.90
-    confidence_level: float       = 0.95
-    dp_size_threshold: int        = 1000
-    optimizer_strategy: SelectionStrategy = SelectionStrategy.AUTO
-    preserve_operator_diversity: bool     = True
-    stop_early_on_convergence: bool       = False  # future: early exit
-    verbose: bool = False
+    time_budget_seconds:        int              = 1200
+    jaccard_threshold:          float            = 0.90
+    confidence_level:           float            = 0.95
+    dp_size_threshold:          int              = 1000
+    optimizer_strategy:         SelectionStrategy = SelectionStrategy.AUTO
+    preserve_operator_diversity: bool             = True
+
+
+MutantRunner = Callable[[Mutant], None]
 
 
 class IMPTEngine:
-    """
-    Main orchestration engine.
-
-    Usage
-    -----
-    engine = IMPTEngine(project, config)
-    result = engine.run(mutants, runner=my_pit_adapter.run_mutant)
-    print(result.summary())
-    """
-
-    def __init__(
-        self,
-        project: Project,
-        config: Optional[EngineConfig] = None,
-    ) -> None:
+    def __init__(self, project: Project, config: Optional[EngineConfig] = None):
         self.project = project
-        self.cfg = config or EngineConfig(
+        self.cfg     = config or EngineConfig(
             time_budget_seconds=project.config.time_budget_seconds,
             jaccard_threshold=project.config.jaccard_threshold,
+            confidence_level=project.config.confidence_level,
         )
+        self.scorer      = MultiFactorScorer(project)
+        self.reducer     = SubsumptionAnalyzer(self.cfg.jaccard_threshold,
+                                                self.cfg.preserve_operator_diversity)
+        self.estimator   = ExecutionTimeEstimator(project)
+        self.optimizer   = TimeBudgetOptimizer(self.cfg.time_budget_seconds,
+                                               self.cfg.optimizer_strategy)
+        self.extrapolator = StatisticalExtrapolator(self.cfg.confidence_level)
 
-        # Instantiate algorithm modules
-        self.scorer = MultiFactorScorer(
-            factor_weights=project.config.factor_weights,
-            operator_multipliers=project.config.operator_multipliers,
-        )
-        self.subsumption = SubsumptionAnalyzer(
-            jaccard_threshold=self.cfg.jaccard_threshold,
-            preserve_operator_diversity=self.cfg.preserve_operator_diversity,
-        )
-        self.time_estimator = ExecutionTimeEstimator(project=project)
-        self.optimizer = TimeBudgetOptimizer(
-            time_budget_seconds=self.cfg.time_budget_seconds,
-            dp_size_threshold=self.cfg.dp_size_threshold,
-            strategy=self.cfg.optimizer_strategy,
-        )
-        self.extrapolator = StatisticalExtrapolator(
-            confidence_level=self.cfg.confidence_level,
-        )
+    def run(self, mutants: List[Mutant], runner: Optional[MutantRunner] = None) -> MutationTestResult:
+        import time
 
-    # ------------------------------------------------------------------
-    # Main pipeline
-    # ------------------------------------------------------------------
+        if not mutants:
+            return MutationTestResult([], [], [], 0.0)
 
-    def run(
-        self,
-        mutants: List[Mutant],
-        runner: MutantRunner = _default_mock_runner,
-    ) -> MutationTestResult:
-        """
-        Execute the full IMPT pipeline and return a MutationTestResult.
-
-        Parameters
-        ----------
-        mutants : list of Mutant
-            The full mutant pool generated by the framework adapter.
-        runner  : callable
-            A function (Mutant → None) that executes one mutant against
-            the test suite and sets mutant.status and mutant.execution_time.
-        """
-        result = MutationTestResult(
-            project_name=self.project.name,
-            framework=self.project.framework.value,
-            all_mutants=mutants,
-        )
-        result.mutants_before_subsumption = len(mutants)
-
-        # ── Step 1: Multi-Factor Scoring ──────────────────────────────
-        log.info("[Engine] Step 1: Multi-Factor Scoring (%d mutants)", len(mutants))
-        t_start = time.perf_counter()
+        # Step 1 — Score
         self.scorer.score_population(mutants)
-        log.info("[Engine] Scoring done in %.2fs", time.perf_counter() - t_start)
 
-        # ── Step 2: Subsumption Analysis ──────────────────────────────
-        log.info("[Engine] Step 2: Subsumption Analysis")
-        reduced = self.subsumption.reduce(mutants)
-        result.mutants_after_subsumption = len(reduced)
-        result.subsumption_reduction_pct = (
-            (1 - len(reduced) / len(mutants)) * 100 if mutants else 0.0
-        )
-        log.info(
-            "[Engine] %d → %d mutants (%.1f%% reduction)",
-            len(mutants), len(reduced), result.subsumption_reduction_pct,
-        )
+        # Step 2 — Reduce
+        reduced = self.reducer.reduce(mutants)
+        sub_pct = (1 - len(reduced) / len(mutants)) * 100 if mutants else 0
 
-        # ── Step 3: Execution Time Estimation ─────────────────────────
-        log.info("[Engine] Step 3: Execution Time Estimation")
-        self.time_estimator.estimate_population(reduced)
+        # Step 3 — Estimate execution times
+        self.estimator.estimate_population(reduced)
 
-        # ── Step 4: Time-Budget Optimization ──────────────────────────
-        log.info(
-            "[Engine] Step 4: Knapsack Optimization (budget=%ds)",
-            self.cfg.time_budget_seconds,
-        )
-        sel_result = self.optimizer.select(reduced)
-        selected   = list(sel_result.selected)
-        result.selected_mutants = selected
-        log.info(
-            "[Engine] Selected %d mutants | strategy=%s | gap=%.1f%%",
-            len(selected),
-            sel_result.strategy_used.value,
-            sel_result.optimality_gap_pct or 0.0,
-        )
+        # Step 4 — Select within budget
+        selected = self.optimizer.select(reduced)
 
-        # ── Step 5: Mutation Execution ────────────────────────────────
-        log.info("[Engine] Step 5: Executing %d mutants …", len(selected))
-        exec_start = time.perf_counter()
-        executed   = self._execute(selected, runner)
-        result.executed_mutants     = executed
-        result.total_execution_time = time.perf_counter() - exec_start
-        log.info("[Engine] Execution done in %.2fs", result.total_execution_time)
-
-        # ── Step 6: Statistical Extrapolation ─────────────────────────
-        log.info("[Engine] Step 6: Statistical Extrapolation")
-        result.compute_mutation_score()
-        result.estimate = self.extrapolator.estimate(executed)
-
-        # Estimate exhaustive time for time-saved calculation
-        avg_t = (
-            sum(m.execution_time for m in reduced) if reduced else 0.0
-        )
-        result.exhaustive_time_estimate = avg_t
-        if avg_t > 0:
-            result.time_saved_pct = (
-                (avg_t - result.total_execution_time) / avg_t * 100
-            )
-
-        # Per-operator stats
-        result.operator_stats = self._operator_breakdown(executed)
-
-        log.info("[Engine] Run complete. Score=%.1f%%", result.mutation_score * 100)
-        return result
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _execute(
-        self, mutants: List[Mutant], runner: MutantRunner
-    ) -> List[Mutant]:
-        """Run each mutant through the supplied runner."""
-        for i, m in enumerate(mutants):
-            try:
+        # Step 5 — Execute
+        t0 = time.monotonic()
+        if runner:
+            for m in selected:
+                t_start = time.monotonic()
                 runner(m)
-            except Exception as exc:  # noqa: BLE001
-                log.warning("Runner error on mutant %s: %s", m.id, exc)
-                m.status = ExecutionStatus.ERROR
-            if self.cfg.verbose and (i + 1) % 50 == 0:
-                done  = i + 1
-                killed = sum(1 for x in mutants[:done] if x.is_killed)
-                log.info("  … %d/%d executed, %d killed", done, len(mutants), killed)
-        return mutants
+                actual = time.monotonic() - t_start
+                m.execution_time = actual
+                self.estimator.record_actual(m.execution_time, actual)
+        total_time = time.monotonic() - t0
 
-    @staticmethod
-    def _operator_breakdown(mutants: List[Mutant]) -> dict:
-        stats: dict = {}
-        for m in mutants:
+        # Step 6 — Extrapolate
+        executed = [m for m in selected if m.status != ExecutionStatus.PENDING]
+        estimate = self.extrapolator.estimate(executed) if executed else None
+
+        # Score
+        scored_m = [m for m in executed if m.counts_in_score]
+        killed   = sum(1 for m in scored_m if m.is_killed)
+        score    = (killed / len(scored_m)) if scored_m else 0.0
+
+        # Time saved
+        exhaustive_time = sum(m.execution_time for m in mutants)
+        selected_time   = sum(m.execution_time for m in selected)
+        time_saved      = (1 - selected_time / exhaustive_time) * 100 if exhaustive_time > 0 else 0.0
+
+        # Operator stats
+        from collections import defaultdict
+        op_stats: dict = defaultdict(lambda: {"total": 0, "killed": 0})
+        for m in executed:
             op = m.operator.value
-            if op not in stats:
-                stats[op] = {"total": 0, "killed": 0, "survived": 0}
-            stats[op]["total"] += 1
+            op_stats[op]["total"] += 1
             if m.is_killed:
-                stats[op]["killed"] += 1
-            elif m.is_survived:
-                stats[op]["survived"] += 1
-        for op, s in stats.items():
-            t = s["total"]
-            stats[op]["kill_rate"] = s["killed"] / t if t else 0.0
-        return stats
+                op_stats[op]["killed"] += 1
+
+        return MutationTestResult(
+            all_mutants              = mutants,
+            selected_mutants         = selected,
+            executed_mutants         = executed,
+            mutation_score           = score,
+            estimate                 = estimate,
+            subsumption_reduction_pct = sub_pct,
+            time_saved_pct           = time_saved,
+            total_execution_time     = total_time,
+            operator_stats           = dict(op_stats),
+        )
