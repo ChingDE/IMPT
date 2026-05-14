@@ -439,14 +439,16 @@ export function NewSessionReview() {
   const { id } = useParams();
   const nav    = useNavigate();
   const [session, setSession] = useState(null);
-  const [error, setError]     = useState('');
-  const [loading, setLoading] = useState(false);
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => { getSession(id).then(setSession).catch(()=>nav('/dashboard')); },[id]);
 
   const ops = session?.selected_operators ? JSON.parse(session.selected_operators) : [];
 
   const handleStart = async () => {
+    setShowConfirm(false);
     setLoading(true); setError('');
     try {
       await startTesting(id);
