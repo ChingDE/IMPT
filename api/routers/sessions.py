@@ -360,7 +360,9 @@ async def configure_operators(
     session = await repo.get_by_id(session_id)
     if not session or session.owner_id != current_user.id:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.status not in ("uploaded", "configured"):
+    if session.status not in ("uploaded", "configured", "ready", "running", "completed", "failed"):
+        raise HTTPException(status_code=400, detail="Project must be uploaded before configuring operators.")
+    if not session.upload_path:
         raise HTTPException(status_code=400, detail="Project must be uploaded before configuring operators.")
     if not payload.selected_operators:
         raise HTTPException(status_code=422, detail="At least one mutation operator must be selected.")
@@ -388,7 +390,9 @@ async def set_budget(
     session = await repo.get_by_id(session_id)
     if not session or session.owner_id != current_user.id:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.status not in ("configured", "ready"):
+    if session.status not in ("configured", "ready", "running", "completed", "failed"):
+        raise HTTPException(status_code=400, detail="Operators must be configured before setting time budget.")
+    if not session.selected_operators:
         raise HTTPException(status_code=400, detail="Operators must be configured before setting time budget.")
 
     updated = await repo.update(
@@ -418,8 +422,14 @@ async def start_testing(
 
     if not session or session.owner_id != current_user.id:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.status != "ready":
+    if session.status not in ("ready", "configured"):
         raise HTTPException(status_code=400, detail="Session is not ready to start. Complete all configuration steps first.")
+    if not session.upload_path:
+        raise HTTPException(status_code=400, detail="Please upload your project first.")
+    if not session.selected_operators:
+        raise HTTPException(status_code=400, detail="Please configure mutation operators first.")
+    if not session.time_budget_minutes:
+        raise HTTPException(status_code=400, detail="Please set a time budget first.")
 
     from db.repositories.repositories import JobRepository
     from db.database import AsyncSessionLocal

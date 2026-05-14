@@ -45,6 +45,18 @@ export function NewSessionCreate() {
     }
   };
 
+  // Resume session from history — redirect to correct step based on status
+  const resumeSession = (session) => {
+    const { id, status } = session;
+    if (!status || status === 'not_started') return nav(`/sessions/${id}/upload`);
+    if (status === 'uploaded')               return nav(`/sessions/${id}/operators`);
+    if (status === 'configured')             return nav(`/sessions/${id}/budget`);
+    if (status === 'ready')                  return nav(`/sessions/${id}/review`);
+    if (status === 'running')                return nav(`/running/${id}`);
+    if (status === 'completed')              return nav(`/results/${id}`);
+    return nav(`/sessions/${id}/upload`);
+  };
+
   return (
     <AppShell>
       <WizardHeader title="New Test Session" step={1} totalSteps={5} stepLabel="Create Session"
@@ -136,7 +148,7 @@ export function NewSessionUpload() {
     }
   };
 
-  const uploaded = session?.status !== 'not_started';
+  const uploaded = session?.status && session.status !== 'not_started' && !!session?.upload_path;
   const lang = session?.language || 'java';
 
   return (
@@ -237,7 +249,14 @@ export function NewSessionOperators() {
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { getSession(id).then(s => { setSession(s); if(s.selected_operators) setSelected(new Set(JSON.parse(s.selected_operators))); }).catch(()=>nav('/dashboard')); }, [id]);
+  useEffect(() => {
+    getSession(id).then(s => {
+      setSession(s);
+      if (s.selected_operators) {
+        try { setSelected(new Set(JSON.parse(s.selected_operators))); } catch {}
+      }
+    }).catch(() => nav('/dashboard'));
+  }, [id]);
 
   if (!session) return <AppShell><div className="page-content" style={{textAlign:'center',paddingTop:60,color:'var(--gray-400)'}}>Loading…</div></AppShell>;
 
@@ -323,7 +342,14 @@ export function NewSessionBudget() {
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { getSession(id).then(s=>{setSession(s);if(s.time_budget_minutes)setBudgetVal(s.time_budget_minutes);}).catch(()=>nav('/dashboard')); },[id]);
+  useEffect(() => {
+    getSession(id).then(s => {
+      setSession(s);
+      if (s.time_budget_minutes) setBudgetVal(s.time_budget_minutes);
+      if (s.run_comparison !== undefined)    setRunComparison(s.run_comparison);
+      if (s.run_operator_based !== undefined) setRunOperatorBased(s.run_operator_based);
+    }).catch(() => nav('/dashboard'));
+  }, [id]);
 
   if (!session) return <AppShell><div className="page-content" style={{textAlign:'center',paddingTop:60,color:'var(--gray-400)'}}>Loading…</div></AppShell>;
 
