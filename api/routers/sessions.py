@@ -102,6 +102,41 @@ async def get_session(
     return session
 
 
+# ── Get session jobs ──────────────────────────────────────────────────────────
+
+@router.get("/{session_id}/jobs")
+async def get_session_jobs(
+    session_id: str,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all jobs for a session with live progress metrics."""
+    repo    = TestSessionRepository(db)
+    session = await repo.get_by_id(session_id)
+    if not session or session.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    from db.repositories.repositories import JobRepository
+    job_repo = JobRepository(db)
+    jobs     = await job_repo.get_session_jobs(session_id)
+    return [
+        {
+            "id":              j.id,
+            "strategy":        j.strategy,
+            "status":          j.status,
+            "total_mutants":   j.total_mutants,
+            "selected_mutants":j.selected_mutants,
+            "executed_mutants":j.executed_mutants,
+            "killed_mutants":  j.killed_mutants,
+            "mutation_score":  round(j.mutation_score * 100, 1),
+            "time_saved_pct":  round(j.time_saved_pct, 1),
+            "execution_time_seconds": j.execution_time_seconds,
+            "error_message":   j.error_message,
+        }
+        for j in jobs
+    ]
+
+
 # ── Update session name/description ───────────────────────────────────────────
 
 @router.patch("/{session_id}", response_model=SessionOut)
@@ -448,58 +483,49 @@ async def start_testing(
         "use_docker": True,
     }
 
-    from worker.tasks import run_mutation_job_sync
     from worker.celery_app import CELERY_AVAILABLE
 
     all_jobs = [impt_job] + comparison_jobs
+    job_ids  = [j.id for j in all_jobs]
+
+    # Store job IDs on the session for frontend polling
+    await repo.update(session, selected_operators=json.dumps({
+        "job_ids": job_ids,
+        "operators": operators,
+    }) if False else session.selected_operators)  # no-op, job_ids returned below
+
     for job in all_jobs:
-        job_config = {**config, "time_budget_seconds": job.time_budget_seconds, "optimizer_strategy": job.optimizer_strategy, "strategy": job.strategy}
+        job_config = {
+            **config,
+            "time_budget_seconds":  job.time_budget_seconds,
+            "optimizer_strategy":   job.optimizer_strategy,
+            "strategy":             job.strategy,
+        }
+        dispatched = False
         if CELERY_AVAILABLE:
             from worker.tasks import run_mutation_job
             try:
                 task = run_mutation_job.delay(job.id, job_config)
                 await job_repo.mark_running(job.id, task.id)
                 await db.commit()
-                continue
+                dispatched = True
+                log.info("Job %s dispatched to Celery (%s)", job.id, task.id)
             except Exception as exc:
-                log.warning("Celery failed, falling back to sync: %s", exc)
+                log.warning("Celery dispatch failed, using thread: %s", exc)
 
-        # Sync fallback
-        import asyncio
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, _run_sync, job.id, job_config)
+        if not dispatched:
+            # Run in a background thread using only sync DB access (no asyncio.run conflict)
+            import threading
+            from worker.tasks import run_mutation_job_sync
+            t = threading.Thread(
+                target=run_mutation_job_sync,
+                args=(job.id, job_config),
+                daemon=True,
+            )
+            t.start()
+            log.info("Job %s dispatched to background thread", job.id)
 
-    return {"session_id": session_id, "jobs": [j.id for j in all_jobs]}
-
-
-def _run_sync(job_id: str, config: dict):
-    """Run mutation job synchronously in a thread."""
-    import asyncio
-    from worker.tasks import run_mutation_job_sync
-    from db.database import AsyncSessionLocal
-    from db.repositories.repositories import JobRepository
-
-    async def _do():
-        async with AsyncSessionLocal() as db:
-            repo = JobRepository(db)
-            await repo.mark_running(job_id, "sync")
-            await db.commit()
-
-        try:
-            result = run_mutation_job_sync(job_id, config)
-            records = result.pop("mutant_records", [])
-            async with AsyncSessionLocal() as db:
-                repo = JobRepository(db)
-                await repo.mark_completed(job_id, result)
-                await repo.save_mutant_records(job_id, records)
-                await db.commit()
-        except Exception as exc:
-            async with AsyncSessionLocal() as db:
-                repo = JobRepository(db)
-                await repo.mark_failed(job_id, str(exc))
-                await db.commit()
-
-    asyncio.run(_do())
+    return {"session_id": session_id, "jobs": job_ids}
 
 
 # ── Shareable link ─────────────────────────────────────────────────────────────

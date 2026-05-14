@@ -48,6 +48,7 @@ export const setBudget          = (id,p)      => client.post(`/api/sessions/${id
 export const startTesting       = (id)        => client.post(`/api/sessions/${id}/start`).then(r => r.data);
 export const createShareLink    = (id)        => client.post(`/api/sessions/${id}/share`).then(r => r.data);
 export const getSharedSession   = (token)     => client.get(`/api/sessions/share/${token}`).then(r => r.data);
+export const getSessionJobs     = (id)       => client.get(`/api/sessions/${id}/jobs`).then(r => r.data);
 
 // ── Jobs ──────────────────────────────────────────────────────────
 export const getJobStatus    = (id) => client.get(`/api/jobs/${id}`).then(r => r.data);

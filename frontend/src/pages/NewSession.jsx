@@ -162,7 +162,7 @@ export function NewSessionUpload() {
             onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0])}}>
             <div style={{ fontSize:36,marginBottom:8 }}>{uploaded?'✅':file?'📦':'☁️'}</div>
             <div style={{ fontSize:15,fontWeight:600,color:'var(--gray-700)',marginBottom:4 }}>
-              {uploaded ? `✓ ${session.upload_filename}` : file ? file.name : 'Drag and drop project folder here'}
+              {uploaded ? `✓ ${session?.upload_filename}` : file ? file.name : 'Drag and drop project folder here'}
             </div>
             <div style={{ fontSize:13,color:'var(--gray-400)',marginBottom:8 }}>
               {uploaded ? 'Project uploaded successfully!' : 'or'}
@@ -192,7 +192,7 @@ export function NewSessionUpload() {
             <div style={{ background:'var(--green-xlight)',border:'1px solid var(--green-light)',borderRadius:8,padding:'14px 16px',marginBottom:16 }}>
               <div style={{ fontWeight:600,color:'var(--green)',marginBottom:8 }}>✓ Project Uploaded Successfully</div>
               <div className="grid-3" style={{ gap:12 }}>
-                {[['Files',session.file_count||0],['Lines of Code',session.loc?.toLocaleString()||0],['Test Files',session.test_count||0]].map(([l,v])=>(
+                {[['Files',session.file_count||0],['Lines of Code',session?.loc?.toLocaleString()||0],['Test Files',session.test_count||0]].map(([l,v])=>(
                   <div key={l} style={{ textAlign:'center' }}>
                     <div style={{ fontSize:20,fontWeight:700,color:'var(--gray-800)' }}>{v}</div>
                     <div style={{ fontSize:11,color:'var(--gray-500)' }}>{l}</div>
@@ -200,7 +200,7 @@ export function NewSessionUpload() {
                 ))}
               </div>
               <div style={{ marginTop:8,fontSize:12,color:'var(--gray-500)' }}>
-                Framework detected: <strong>{session.detected_framework}</strong>
+                Framework detected: <strong>{session?.detected_framework}</strong>
               </div>
             </div>
           )}
@@ -439,14 +439,16 @@ export function NewSessionReview() {
   const { id } = useParams();
   const nav    = useNavigate();
   const [session, setSession] = useState(null);
-  const [error, setError]     = useState('');
-  const [loading, setLoading] = useState(false);
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => { getSession(id).then(setSession).catch(()=>nav('/dashboard')); },[id]);
 
   const ops = session?.selected_operators ? JSON.parse(session.selected_operators) : [];
 
   const handleStart = async () => {
+    setShowConfirm(false);
     setLoading(true); setError('');
     try {
       await startTesting(id);
@@ -460,7 +462,7 @@ export function NewSessionReview() {
 
   return (
     <AppShell>
-      <WizardHeader title={session.name} step={5} totalSteps={5} stepLabel="Review & Start"
+      <WizardHeader title={session?.name} step={5} totalSteps={5} stepLabel="Review & Start"
         right={<button className="hdr-btn ghost" onClick={()=>nav('/dashboard')}>Cancel</button>} />
       <div className="page-content">
         <div className="card" style={{ maxWidth:720,margin:'0 auto' }}>
@@ -474,12 +476,12 @@ export function NewSessionReview() {
             <div className="card-title" style={{ fontSize:13 }}>Session Summary</div>
             {[
               ['Session Name', session.name],
-              ['Language', session.language === 'java' ? 'Java' : 'JavaScript'],
-              ['Project File', session.upload_filename || '—'],
-              ['Lines of Code', session.loc?.toLocaleString() || '—'],
+              ['Language', session?.language === 'java' ? 'Java' : 'JavaScript'],
+              ['Project File', session?.upload_filename || '—'],
+              ['Lines of Code', session?.loc?.toLocaleString() || '—'],
               ['Selected Operators', `${ops.length} of ${OPERATORS.length} (${ops.join(', ')})`],
-              ['Time Budget', `${session.time_budget_minutes} minutes`],
-              ['Comparison Strategies', session.run_comparison ? 'IMPT Intelligent + Random Sampling' : 'IMPT Intelligent only'],
+              ['Time Budget', `${session?.time_budget_minutes} minutes`],
+              ['Comparison Strategies', session?.run_comparison ? 'IMPT Intelligent + Random Sampling' : 'IMPT Intelligent only'],
             ].map(([l,v])=>(
               <div className="summary-row" key={l}>
                 <span className="lbl">{l}</span>
@@ -496,7 +498,7 @@ export function NewSessionReview() {
           </div>
 
           <InfoBox>
-            <strong>⏱ Estimated duration:</strong> {session.time_budget_minutes} minutes.
+            <strong>⏱ Estimated duration:</strong> {session?.time_budget_minutes} minutes.
             The test will run in the background — you can safely navigate away and return to check progress.
           </InfoBox>
 
