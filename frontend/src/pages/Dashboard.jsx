@@ -111,7 +111,15 @@ export default function Dashboard() {
               <tbody>
                 {sessions.slice(0, 8).map(s => (
                   <tr key={s.id} style={{ cursor: 'pointer' }}
-                    onClick={() => s.status === 'completed' ? nav(`/results/${s.id}`) : nav(`/sessions/${s.id}/upload`)}>
+                    onClick={() => {
+                      const id = s.id;
+                      if (s.status === 'completed')  return nav(`/results/${id}`);
+                      if (s.status === 'running')    return nav(`/running/${id}`);
+                      if (s.status === 'ready')      return nav(`/sessions/${id}/review`);
+                      if (s.status === 'configured') return nav(`/sessions/${id}/budget`);
+                      if (s.status === 'uploaded')   return nav(`/sessions/${id}/operators`);
+                      return nav(`/sessions/${id}/upload`);
+                    }}>
                     <td className="bold">{s.name}</td>
                     <td><span className="badge badge-blue">{s.language}</span></td>
                     <td><StatusBadge status={s.status} /></td>
