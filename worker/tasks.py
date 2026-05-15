@@ -439,6 +439,15 @@ def _get_all_mutants(config: dict, job_id: str):
     Returns (mutants, upload_path, loc, test_count).
     """
     upload_path = _resolve_upload_path(config.get("upload_path", ""))
+
+    # FOSS project — resolve path from pre-cloned directory
+    if not upload_path and config.get("foss_project_id"):
+        foss_slug = config.get("foss_slug", "")
+        candidate = f"/app/foss/{foss_slug}"
+        if Path(candidate).exists():
+            upload_path = candidate
+            log.info("Using FOSS project path: %s", upload_path)
+
     if upload_path and Path(upload_path).exists():
         try:
             from adapters.pit_adapter     import PITAdapter
