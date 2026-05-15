@@ -19,24 +19,26 @@ SECURITY_KEYWORDS = {
 # Literature-based defaults (used when DB is unavailable)
 # Sources: Andrews et al. 2005, Just et al. 2014, Papadakis et al. 2019
 LITERATURE_KILL_RATES: Dict[str, float] = {
-    # Kill rates grounded in Just et al. (2014) — 357 real faults from Defects4J.
-    # ROR and ABS: directly cited (75-85% fault detection).
-    # SDL: directly cited (35-45% fault detection) — significantly lower than others.
-    # AOR, COR: derived from Just et al.'s fault distribution
-    #   (25% arithmetic, 60% conditional logic errors).
-    # UOI, LCR, NEGATE_RETURN, NULL_RETURN, CRP: estimates with no direct citation.
-    # These are labelled as initial defaults; the operator_stats table is updated
-    # from real run data after every completed session.
-    "ROR":           0.80,   # Empirical: Just et al. (2014), 75-85% fault detection
-    "ABS":           0.80,   # Empirical: Just et al. (2014), 75-85% fault detection
-    "NEGATE_RETURN": 0.75,   # Estimate (PIT ReturnValsMutator widely effective)
-    "COR":           0.75,   # Derived: Just et al. (2014), 60% of faults are conditional
-    "AOR":           0.72,   # Derived: Just et al. (2014), 25% of faults are arithmetic
-    "UOI":           0.70,   # Estimate: no direct citation
-    "LCR":           0.65,   # Estimate: no direct citation
-    "NULL_RETURN":   0.60,   # Estimate: no direct citation
-    "CRP":           0.55,   # Estimate: no direct citation
-    "SDL":           0.40,   # Empirical: Just et al. (2014), 35-45% fault detection
+    # Literature-grounded kill rates for each operator.
+    # These are used as initial defaults; the operator_stats table updates them
+    # from real run data after every completed IMPT session.
+    #
+    # Sources:
+    #   Just et al. (2014)   — 357 real faults, Defects4J dataset [primary]
+    #   Offutt et al. (1996) — 5-operator sufficient set achieving 99.5% mutation score
+    #   ISSTA 2023           — empirical crash analysis of PIT operators
+    #   Wong et al. (1995)   — selected ROR and ABS as top fault-finding operators
+    #
+    "ROR":           0.80,  # Just et al. (2014): 75-85% real fault detection [direct citation]
+    "ABS":           0.80,  # Just et al. (2014): 75-85% real fault detection; Wong et al. top pick
+    "NEGATE_RETURN": 0.75,  # ISSTA 2023: NegateConditionals/ReturnVals ~50% of test crashes
+    "COR":           0.75,  # Derived: Just et al. (2014) — 60% of real faults are conditional logic
+    "AOR":           0.72,  # Derived: Just et al. (2014) — 25% of faults arithmetic; Offutt sufficient set
+    "LCR":           0.72,  # Offutt et al. (1996): member of 5-operator sufficient set (99.5% score)
+    "UOI":           0.68,  # Offutt sufficient set; practical note: higher unproductive mutant rate
+    "NULL_RETURN":   0.65,  # ISSTA 2023: NullReturnVals causes frequent NPEs, commonly caught
+    "CRP":           0.55,  # Estimate: no strong empirical citation found in literature
+    "SDL":           0.40,  # Just et al. (2014): 35-45% real fault detection [direct citation]
 }
 
 

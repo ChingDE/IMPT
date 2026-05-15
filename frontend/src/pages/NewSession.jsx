@@ -17,9 +17,9 @@ const OPERATORS = [
   { code:'NEGATE_RETURN', name:'Negate Return Value',             eff:75, lvl:'High',     framework:'both', desc:'Negates boolean/primitive return values. Example: return true → return false' },
   { code:'COR',           name:'Conditional Operator Replacement',eff:75, lvl:'High',     framework:'both', desc:'Removes or alters conditional expressions. Example: if(a&&b) → if(a)' },
   { code:'AOR',           name:'Arithmetic Operator Replacement', eff:72, lvl:'Moderate', framework:'both', desc:'Replaces arithmetic operators (+,-,*,/,%). Example: a+b → a-b' },
-  { code:'UOI',           name:'Unary Operator Insertion',        eff:70, lvl:'Moderate', framework:'both', desc:'Adds/removes unary operators. Example: x → -x' },
-  { code:'LCR',           name:'Logical Connector Replacement',   eff:65, lvl:'Moderate', framework:'js',   desc:'Swaps logical connectors. Example: && → ||. JavaScript/Stryker only.' },
-  { code:'NULL_RETURN',   name:'Null/Empty Return Value',         eff:60, lvl:'Moderate', framework:'both', desc:'Replaces return values with null or empty equivalents. Example: return obj → return null' },
+  { code:'UOI',           name:'Unary Operator Insertion',        eff:68, lvl:'Moderate', framework:'both', desc:'Adds/removes unary operators. Example: x → -x' },
+  { code:'LCR',           name:'Logical Connector Replacement',   eff:72, lvl:'Moderate', framework:'js',   desc:'Swaps logical connectors. Example: && → ||. JavaScript/Stryker only.' },
+  { code:'NULL_RETURN',   name:'Null/Empty Return Value',         eff:65, lvl:'Moderate', framework:'both', desc:'Replaces return values with null or empty equivalents. Example: return obj → return null' },
   { code:'CRP',           name:'Constant Replacement',            eff:55, lvl:'Moderate', framework:'js',   desc:'Replaces string/regex constants. JavaScript/Stryker only.' },
   { code:'SDL',           name:'Statement Deletion',              eff:40, lvl:'Low',       framework:'both', desc:'Deletes an entire statement or block. Lower fault-detection rate per Just et al. (2014).' },
 ];
