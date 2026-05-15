@@ -154,6 +154,23 @@ def _mark_completed_sync(job_id: str, result: dict, records: list) -> None:
                     "expl":   (rec.get("explanation") or "")[:1000],
                 })
         engine.dispose()
+        # Update global operator kill rates from this run's results
+        try:
+            from adapters.factor_enricher import update_operator_stats
+            op_results = {}
+            for rec in records:
+                op = rec.get("operator", "")
+                if op:
+                    if op not in op_results:
+                        op_results[op] = {"total": 0, "killed": 0}
+                    op_results[op]["total"] += 1
+                    if rec.get("status") == "KILLED":
+                        op_results[op]["killed"] += 1
+            if op_results:
+                update_operator_stats(op_results)
+        except Exception as ue:
+            log.debug("Operator stats update failed (non-fatal): %s", ue)
+
         log.info("Job %s completed and saved.", job_id)
     except Exception as e:
         log.error("mark_completed failed: %s", e)
@@ -424,20 +441,20 @@ def _get_all_mutants(config: dict, job_id: str):
             if lang == "java":
                 adapter = PITAdapter(p, use_docker=True)
                 mutants = adapter.run()
-                spm = 0.0
             else:
                 adapter = StrykerAdapter(p, use_docker=True)
                 mutants = adapter.enumerate()
-                # Get calibrated seconds-per-mutant from cache
-                spm = adapter._cached_seconds_per_mutant()
-                if spm > 0:
-                    log.info("Calibrated execution time: %.2fs per mutant", spm)
-                    # Update each mutant execution time estimate with real measurement
-                    for m in mutants:
-                        m.execution_time = spm
             FactorEnricher(p).enrich(mutants)
+
+            # Calibrate execution time per mutant from project characteristics
+            # This drives the knapsack optimizer budget allocation
+            spm = project.estimated_seconds_per_mutant()
+            log.info("Estimated %.2fs per mutant (test_count=%d)",
+                     spm, project.test_count)
             for m in mutants:
                 m.status = ExecutionStatus.PENDING
+                m.execution_time = spm  # uniform estimate before actual run
+
             log.info("Phase 1: %d mutants enumerated from %s", len(mutants), upload_path)
             return mutants, upload_path
         except Exception as e:
