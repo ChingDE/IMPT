@@ -248,40 +248,53 @@ class StrykerAdapter:
         return cmd
 
     def _ensure_deps(self):
-        """Install node_modules if missing."""
-        nm = self.project_dir / "node_modules"
+        """Install node_modules if missing. File-locked to prevent concurrent installs."""
+        import fcntl
+        nm        = self.project_dir / "node_modules"
+        lock_path = self.project_dir / ".npm-install.lock"
+
+        # Fast path
         if nm.exists() and any(nm.iterdir()):
             log.info("node_modules exists, skipping install")
             return
+
         log.info("Installing npm dependencies for %s...", self.project_dir)
-        cmd = self._docker_base(network="bridge", user="root") + [
-            "sh", "-c",
-            (
-                "npm install --unsafe-perm --no-audit --no-fund 2>&1 ; "
-                "[ -d node_modules/@stryker-mutator/core ] || "
-                "npm install --unsafe-perm --no-audit --save-dev "
-                "@stryker-mutator/core 2>&1 || true ; "
-                "chmod -R 777 . 2>/dev/null || true"
-            )
-        ]
+        lock_file = open(lock_path, "w")
         try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            # Re-check after acquiring lock
+            if nm.exists() and any(nm.iterdir()):
+                log.info("node_modules installed by concurrent worker, skipping")
+                return
+
+            cmd = self._docker_base(network="bridge", user="root") + [
+                "sh", "-c",
+                (
+                    "test -f package.json || (echo 'ERROR: no package.json' && exit 1) ; "
+                    "npm install --unsafe-perm --no-audit --no-fund --prefix /project 2>&1 ; "
+                    "[ -d node_modules/@stryker-mutator/core ] || "
+                    "npm install --unsafe-perm --no-audit --save-dev --prefix /project "
+                    "@stryker-mutator/core 2>&1 || true ; "
+                    "chmod -R 777 /project 2>/dev/null || true"
+                )
+            ]
             r = subprocess.run(cmd, timeout=600, capture_output=True, text=True)
-            log.info("npm install exit=%d stdout=%s stderr=%s",
-                     r.returncode,
-                     r.stdout[-300:] if r.stdout else "",
-                     r.stderr[-300:] if r.stderr else "")
-            # Verify node_modules was actually created
+            log.info("npm install exit=%d stdout=%s",
+                     r.returncode, r.stdout[-300:] if r.stdout else "")
             if not nm.exists():
                 raise RuntimeError(
                     "npm install completed but node_modules not found at " + str(nm) +
                     ". stdout=" + (r.stdout or "")[-200:]
                 )
-            log.info("node_modules installed successfully at %s", nm)
-        except RuntimeError:
-            raise
-        except Exception as e:
-            log.error("npm install failed: %s", e)
-            raise
+            log.info("node_modules ready at %s", nm)
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+            lock_file.close()
+            try:
+                lock_path.unlink()
+            except Exception:
+                pass
+
 
     def _run_stryker_docker(self, extra_flags=""):
         """Run Stryker without network, without root (so ava/jest work)."""
