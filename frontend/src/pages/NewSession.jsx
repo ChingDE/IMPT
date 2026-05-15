@@ -350,7 +350,9 @@ export function NewSessionBudget() {
   const nav    = useNavigate();
   const [session, setSession] = useState(null);
   const [budget, setBudgetVal] = useState(20);
-  const [runComparison, setRunComparison] = useState(true);
+  const [runComparison, setRunComparison]     = useState(true);
+  const [runOperatorBased, setRunOperatorBased] = useState(true);
+  const [lowBudgetConfirmed, setLowBudgetConfirmed] = useState(false);
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
 
