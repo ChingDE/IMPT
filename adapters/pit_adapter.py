@@ -56,15 +56,42 @@ class PITAdapter:
             self._run_local()
         return self._parse_results()
 
-    def _run_docker(self) -> None:
-        cmd = [
+    def _docker_base(self, network: str = "none") -> list:
+        """Base docker run command with persistent Maven cache."""
+        # Use a named volume for Maven cache so dependencies persist between runs
+        return [
             "docker", "run", "--rm",
-            "--network", "none",
+            "--network", network,
             "--memory", "2g",
             "--cpus", "2",
             "-v", f"{self.project_dir}:/project",
+            "-v", "impt-maven-cache:/root/.m2",
             "-w", "/project",
             self.sandbox_image,
+        ]
+
+    def _run_docker(self) -> None:
+        """Two-phase execution: resolve deps with network, then run PIT without."""
+        # Phase 1: Download all dependencies (with network)
+        log.info("Phase 1: Resolving Maven dependencies (network enabled)…")
+        resolve_cmd = self._docker_base(network="bridge") + [
+            "mvn", "dependency:resolve",
+            "org.pitest:pitest-maven:1.15.3:mutationCoverage",
+            "-DskipTests",
+            "-DfailWhenNoMutations=false",
+            "--batch-mode", "-q",
+        ]
+        try:
+            result = subprocess.run(resolve_cmd, timeout=600,
+                                    capture_output=True, text=True)
+            log.info("Maven dependency resolution complete")
+        except subprocess.CalledProcessError as e:
+            log.warning("Dependency resolution had warnings (may still work): %s",
+                        (e.stderr or "")[-300:])
+
+        # Phase 2: Run PIT mutation testing (no network needed)
+        log.info("Phase 2: Running PIT mutation testing (network disabled)…")
+        pit_cmd = self._docker_base(network="none") + [
             "mvn", "org.pitest:pitest-maven:mutationCoverage",
             "-DtimestampedReports=false",
             "-DoutputFormats=XML",
@@ -72,7 +99,18 @@ class PITAdapter:
             "-DfailWhenNoMutations=false",
             "--batch-mode",
         ]
-        subprocess.run(cmd, check=True, timeout=3600)
+        try:
+            result = subprocess.run(pit_cmd, check=True, timeout=3600,
+                                    capture_output=True, text=True)
+            log.info("PIT completed successfully")
+        except subprocess.CalledProcessError as e:
+            output = (e.stdout or "") + (e.stderr or "")
+            log.error("PIT failed: %s", output[-1000:])
+            # Check if report was generated despite error
+            if self._find_report():
+                log.warning("PIT exited with error but report found — proceeding")
+            else:
+                raise
 
     def _run_local(self) -> None:
         if (self.project_dir / "pom.xml").exists():

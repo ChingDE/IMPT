@@ -39,6 +39,7 @@ services:
       - ${HOME}/impt/uploads:/app/uploads
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker
+      - impt-maven-cache:/root/.m2
 
   beat:
     build: .
@@ -52,3 +53,7 @@ services:
       PYTHONPATH: /app
 
 # uploads dir is a bind mount to ~/impt/uploads on the host
+
+volumes:
+  impt-maven-cache:
+    name: impt-maven-cache
