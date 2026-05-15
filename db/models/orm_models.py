@@ -314,6 +314,22 @@ class AuditLog(Base):
 # ── System Config ─────────────────────────────────────────────────────────────
 # FR147–FR152
 
+class OperatorStats(Base):
+    """Global operator kill rate statistics — updated after every completed run.
+    Used to populate historical_effectiveness factor for IMPT scoring.
+    Based on empirical data from published mutation testing research as starting point,
+    refined by actual run results from all users.
+    """
+    __tablename__ = "operator_stats"
+
+    operator:      Mapped[str]   = mapped_column(String(50), primary_key=True)
+    total_mutants: Mapped[int]   = mapped_column(Integer, default=0)
+    killed_mutants:Mapped[int]   = mapped_column(Integer, default=0)
+    kill_rate:     Mapped[float] = mapped_column(Float,   default=0.5)
+    last_updated:  Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow,
+                                                     onupdate=datetime.utcnow)
+
+
 class SystemConfig(Base):
     __tablename__ = "system_config"
 
