@@ -253,7 +253,7 @@ class StrykerAdapter:
         if nm.exists() and any(nm.iterdir()):
             log.info("node_modules exists, skipping install")
             return
-        log.info("Installing npm dependencies (network enabled, as root)...")
+        log.info("Installing npm dependencies for %s...", self.project_dir)
         cmd = self._docker_base(network="bridge", user="root") + [
             "sh", "-c",
             (
@@ -266,9 +266,22 @@ class StrykerAdapter:
         ]
         try:
             r = subprocess.run(cmd, timeout=600, capture_output=True, text=True)
-            log.info("npm install done (exit %d)", r.returncode)
+            log.info("npm install exit=%d stdout=%s stderr=%s",
+                     r.returncode,
+                     r.stdout[-300:] if r.stdout else "",
+                     r.stderr[-300:] if r.stderr else "")
+            # Verify node_modules was actually created
+            if not nm.exists():
+                raise RuntimeError(
+                    "npm install completed but node_modules not found at " + str(nm) +
+                    ". stdout=" + (r.stdout or "")[-200:]
+                )
+            log.info("node_modules installed successfully at %s", nm)
+        except RuntimeError:
+            raise
         except Exception as e:
-            log.warning("npm install warning: %s", e)
+            log.error("npm install failed: %s", e)
+            raise
 
     def _run_stryker_docker(self, extra_flags=""):
         """Run Stryker without network, without root (so ava/jest work)."""
