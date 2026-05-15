@@ -154,9 +154,6 @@ async def update_session(
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
     updated = await repo.update(session, **updates)
     await db.commit()
-    # FR064 — warn in response if no tests detected (non-blocking)
-    if test_count == 0:
-        log.warning("Session %s: no test files detected in uploaded project", session_id)
     return updated
 
 
