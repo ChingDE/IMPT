@@ -67,47 +67,49 @@ export default function History() {
               </button>
             </div>
           ) : (
-          <table className="data-table">
-            <thead><tr><th>Session Name</th><th>Language</th><th>Status</th><th>Created</th><th>Last Modified</th><th>Actions</th></tr></thead>
-            <tbody>
-              {paged.map(s=>(
-                <tr key={s.id}>
-                  <td className="bold" style={{cursor:'pointer'}} onClick={() => {
-                      const id = s.id;
-                      if (s.status === 'completed')  return nav(`/results/${id}`);
-                      if (s.status === 'running')    return nav(`/running/${id}`);
-                      if (s.status === 'ready')      return nav(`/sessions/${id}/review`);
-                      if (s.status === 'configured') return nav(`/sessions/${id}/budget`);
-                      if (s.status === 'uploaded')   return nav(`/sessions/${id}/operators`);
-                      return nav(`/sessions/${id}/upload`);
-                    }}>{s.name}</td>
-                  <td><span className="badge badge-blue">{s.language}</span></td>
-                  <td><StatusBadge status={s.status} /></td>
-                  <td className="text-muted text-sm">{new Date(s.created_at).toLocaleDateString()}</td>
-                  <td className="text-muted text-sm">{new Date(s.updated_at).toLocaleDateString()}</td>
-                  <td>
-                    <div className="flex gap-2">
-                      {s.status === 'completed' && <button className="btn btn-primary btn-sm" onClick={()=>nav(`/results/${s.id}`)}>View</button>}
-                      <button className="btn btn-secondary btn-sm" style={{color:'var(--red)'}} onClick={()=>setDeleteTarget(s)}>Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {paged.length===0 && <tr><td colSpan={6} style={{textAlign:'center',padding:20,color:'var(--gray-400)'}}>No sessions found</td></tr>}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between mt-4">
-            <span className="text-muted text-sm">Showing {Math.min(filtered.length,PER_PAGE)} of {filtered.length} sessions</span>
-            {pages>1 && (
-              <div className="pagination">
-                <button className="page-num" onClick={()=>setPage(Math.max(1,page-1))}>←</button>
-                {Array.from({length:Math.min(pages,5)},(_,i)=>i+1).map(p=>(
-                  <button key={p} className={`page-num ${p===page?'active':''}`} onClick={()=>setPage(p)}>{p}</button>
-                ))}
-                <button className="page-num" onClick={()=>setPage(Math.min(pages,page+1))}>→</button>
+            <div>
+              <table className="data-table">
+                <thead><tr><th>Session Name</th><th>Language</th><th>Status</th><th>Created</th><th>Last Modified</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {paged.map(s=>(
+                    <tr key={s.id}>
+                      <td className="bold" style={{cursor:'pointer'}} onClick={() => {
+                          const id = s.id;
+                          if (s.status === 'completed')  return nav(`/results/${id}`);
+                          if (s.status === 'running')    return nav(`/running/${id}`);
+                          if (s.status === 'ready')      return nav(`/sessions/${id}/review`);
+                          if (s.status === 'configured') return nav(`/sessions/${id}/budget`);
+                          if (s.status === 'uploaded')   return nav(`/sessions/${id}/operators`);
+                          return nav(`/sessions/${id}/upload`);
+                        }}>{s.name}</td>
+                      <td><span className="badge badge-blue">{s.language}</span></td>
+                      <td><StatusBadge status={s.status} /></td>
+                      <td className="text-muted text-sm">{new Date(s.created_at).toLocaleDateString()}</td>
+                      <td className="text-muted text-sm">{new Date(s.updated_at).toLocaleDateString()}</td>
+                      <td>
+                        <div className="flex gap-2">
+                          {s.status === 'completed' && <button className="btn btn-primary btn-sm" onClick={()=>nav(`/results/${s.id}`)}>View</button>}
+                          <button className="btn btn-secondary btn-sm" style={{color:'var(--red)'}} onClick={()=>setDeleteTarget(s)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {paged.length===0 && <tr><td colSpan={6} style={{textAlign:'center',padding:20,color:'var(--gray-400)'}}>No sessions found</td></tr>}
+                </tbody>
+              </table>
+              <div className="flex items-center justify-between mt-4">
+                <span className="text-muted text-sm">Showing {Math.min(filtered.length,PER_PAGE)} of {filtered.length} sessions</span>
+                {pages>1 && (
+                  <div className="pagination">
+                    <button className="page-num" onClick={()=>setPage(Math.max(1,page-1))}>←</button>
+                    {Array.from({length:Math.min(pages,5)},(_,i)=>i+1).map(p=>(
+                      <button key={p} className={`page-num ${p===page?'active':''}`} onClick={()=>setPage(p)}>{p}</button>
+                    ))}
+                    <button className="page-num" onClick={()=>setPage(Math.min(pages,page+1))}>→</button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
           )}
         </div>
       </div>
