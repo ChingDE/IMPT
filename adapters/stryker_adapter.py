@@ -314,10 +314,11 @@ class StrykerAdapter:
             "  mutate: [",
             "    " + mutate_str,
             "  ],",
-            # Tier 1 equivalent mutant detection (manuscript Section 3.5.x):
-            # 'static'  — ignores mutants in static initializers (unreachable by tests)
-            # 'trivial' — ignores algebraic no-ops: x*1, x+0, x||false, x&&true, etc.
-            "  ignorers: ['static', 'trivial'],",
+            # Tier 1 equivalent detection via ignorers requires optional plugins.
+            # 'static' and 'trivial' are NOT built into @stryker-mutator/core —
+            # they need @stryker-mutator/instrumenter which may not be installed.
+            # Removing to prevent plugin-not-found errors; Tier 1 detection is
+            # handled by the NON_VIABLE status mapping from PIT instead.
             "  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],",
             "  jsonReporter: {",
             "    fileName: 'reports/mutation/mutation.json'",

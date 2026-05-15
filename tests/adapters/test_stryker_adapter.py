@@ -299,15 +299,14 @@ def test_ignored_excluded_from_score():
     assert len(scoreable) == 1, "only SURVIVED should count; Ignored (EQUIVALENT) must be excluded"
 
 
-def test_build_config_contains_ignorers():
-    """Generated stryker.config.js must include ignorers: ['static', 'trivial']."""
+def test_build_config_does_not_contain_uninstalled_ignorers():
+    """ignorers: ['static','trivial'] require optional plugins not in core — must be absent."""
     with tempfile.TemporaryDirectory() as tmp:
         pkg = Path(tmp) / "package.json"
         pkg.write_text('{"name":"test","scripts":{"test":"jest"}}')
         (Path(tmp) / "src").mkdir()
         adapter = StrykerAdapter(Path(tmp))
         adapter._ensure_config()
-        # Find whichever config file was written
         cfg = None
         for name in ["stryker.config.js", "stryker.config.cjs"]:
             p = Path(tmp) / name
@@ -315,6 +314,4 @@ def test_build_config_contains_ignorers():
                 cfg = p.read_text()
                 break
         assert cfg is not None, "no stryker config file found"
-        assert "ignorers" in cfg,   "ignorers key missing from config"
-        assert "static"  in cfg,    "'static' ignorer missing from config"
-        assert "trivial" in cfg,    "'trivial' ignorer missing from config"
+        assert "ignorers" not in cfg, "ignorers must not be in config — plugins not installed"
