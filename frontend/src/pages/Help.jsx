@@ -31,18 +31,18 @@ export default function Help() {
       title: 'Mutation Operators',
       body: `Mutation operators introduce small, systematic changes to your code to verify that your tests can detect them.
 
-Effectiveness ratings are grounded in Just et al. (2014), which tested 357 real faults from the Defects4J dataset. Ratings marked "Estimate" have no direct citation.
+Effectiveness ratings are grounded in published empirical research. Citations are noted for each.
 
-ROR (Relational Operator Replacement): Changes <, >, ==, != comparisons. 80% effectiveness. Java & JS. [Just et al. 2014]
-ABS (Conditional Boundary Shift): Shifts boundary conditions (> → >=). 80% effectiveness. Java/PIT only. [Just et al. 2014]
-NEGATE_RETURN (Negate Return Value): Negates boolean/primitive return values. 75% effectiveness. Java & JS. [Estimate]
-COR (Conditional Operator Replacement): Alters or removes conditions. 75% effectiveness. Java & JS. [Derived from Just et al. 2014]
-AOR (Arithmetic Operator Replacement): Replaces +, -, *, / with each other. 72% effectiveness. Java & JS. [Derived from Just et al. 2014]
-UOI (Unary Operator Insertion): Adds/removes negation operators. 70% effectiveness. Java & JS. [Estimate]
-LCR (Logical Connector Replacement): Swaps && and ||. 65% effectiveness. JS/Stryker only. [Estimate]
-NULL_RETURN (Null/Empty Return): Replaces return values with null or empty. 60% effectiveness. Java & JS. [Estimate]
-CRP (Constant Replacement): Replaces string/regex constants. 55% effectiveness. JS/Stryker only. [Estimate]
-SDL (Statement Deletion): Removes statements or blocks entirely. 40% effectiveness. Java & JS. [Just et al. 2014 — significantly lower fault detection]
+ROR (Relational Operator Replacement): 80% effectiveness. Java & JS. [Just et al. 2014: 75-85% real fault detection, Defects4J n=357]
+ABS (Conditional Boundary Shift): 80% effectiveness. Java/PIT only. [Just et al. 2014: 75-85% real fault detection; Wong et al. 1995: top operator pick]
+NEGATE_RETURN (Negate Return Value): 75% effectiveness. Java & JS. [ISSTA 2023: NegateConditionals/ReturnVals ~50% of test crash events]
+COR (Conditional Operator Replacement): 75% effectiveness. Java & JS. [Derived: Just et al. 2014 — 60% of real faults involve conditional logic]
+AOR (Arithmetic Operator Replacement): 72% effectiveness. Java & JS. [Derived: Just et al. 2014 — 25% arithmetic faults; Offutt et al. 1996 sufficient set]
+LCR (Logical Connector Replacement): 72% effectiveness. JS/Stryker only. [Offutt et al. 1996: member of 5-operator sufficient set achieving 99.5% mutation score]
+UOI (Unary Operator Insertion): 68% effectiveness. Java & JS. [Offutt et al. 1996 sufficient set; note: higher unproductive mutant rate in practice]
+NULL_RETURN (Null/Empty Return Value): 65% effectiveness. Java & JS. [ISSTA 2023: NullReturnVals causes frequent NPEs, commonly detected]
+CRP (Constant Replacement): 55% effectiveness. JS/Stryker only. [Estimate — no strong empirical citation found]
+SDL (Statement Deletion): 40% effectiveness. Java & JS. [Just et al. 2014: 35-45% real fault detection — lower than expression operators]
 
 Note: SOR (Shift), VDL (Variable Deletion), and ODL (Operator Deletion) are not available — neither PIT nor Stryker supports them in standard configuration.`,
     },
