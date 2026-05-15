@@ -249,8 +249,8 @@ export default function Results() {
               </div>
             ))}
           </div>
-        )}
         </div>
+        )}
 
         {/* FR110 — Operator breakdown table (sortable) */}
         {Object.keys(opStats).length > 0 && (
