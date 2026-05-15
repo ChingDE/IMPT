@@ -9,9 +9,12 @@ services:
     env_file: .env
     environment:
       PYTHONPATH: /app
+    group_add:
+      - ${DOCKER_GID:-999}
     volumes:
       - ${HOME}/impt/uploads:/app/uploads
       - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
@@ -30,6 +33,8 @@ services:
     env_file: .env
     environment:
       PYTHONPATH: /app
+    group_add:
+      - ${DOCKER_GID:-999}
     volumes:
       - ${HOME}/impt/uploads:/app/uploads
       - /var/run/docker.sock:/var/run/docker.sock
