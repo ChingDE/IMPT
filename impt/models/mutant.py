@@ -7,18 +7,19 @@ from typing import Optional, Set
 
 
 class MutationOperator(Enum):
-    AOR = "AOR"   # Arithmetic Operator Replacement
-    ROR = "ROR"   # Relational Operator Replacement
-    ABS = "ABS"   # Conditional Boundary (Absolute value)
-    COR = "COR"   # Conditional Operator Replacement
-    LCR = "LCR"   # Logical Connector Replacement
-    SOR = "SOR"   # Shift Operator Replacement
-    UOI = "UOI"   # Unary Operator Insertion
-    SDL = "SDL"   # Statement Deletion
-    VDL = "VDL"   # Variable Deletion
-    ODL = "ODL"   # Operator Deletion
-    NEGATE_RETURN = "NEGATE_RETURN"
-    NULL_RETURN   = "NULL_RETURN"
+    AOR           = "AOR"           # Arithmetic Operator Replacement
+    ROR           = "ROR"           # Relational Operator Replacement
+    ABS           = "ABS"           # Conditional Boundary (Absolute value insertion)
+    COR           = "COR"           # Conditional Operator Replacement
+    LCR           = "LCR"           # Logical Connector Replacement
+    SOR           = "SOR"           # Shift Operator Replacement
+    UOI           = "UOI"           # Unary Operator Insertion
+    SDL           = "SDL"           # Statement Deletion
+    VDL           = "VDL"           # Variable Deletion
+    ODL           = "ODL"           # Operator Deletion
+    CRP           = "CRP"           # Constant Replacement
+    NULL_RETURN   = "NULL_RETURN"   # Null/empty return value
+    NEGATE_RETURN = "NEGATE_RETURN" # Negated/primitive return value
 
 
 class ExecutionStatus(Enum):
