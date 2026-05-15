@@ -62,7 +62,9 @@ class PITAdapter:
             test_file.unlink()
             return project_dir
         except (OSError, PermissionError):
-            work_dir = Path("/tmp/impt-foss") / project_dir.name
+            work_base = Path("/app/foss-tmp")
+            work_base.mkdir(parents=True, exist_ok=True)
+            work_dir = work_base / project_dir.name
             if not work_dir.exists():
                 log.info("Copying read-only FOSS project to writable workdir: %s", work_dir)
                 shutil.copytree(str(project_dir), str(work_dir), symlinks=False)

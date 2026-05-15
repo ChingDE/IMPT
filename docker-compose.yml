@@ -14,9 +14,10 @@ services:
       - ${DOCKER_GID:-999}
     volumes:
       - ${HOME}/impt/uploads:/app/uploads
+      - ${HOME}/impt/foss:/app/foss:ro
+      - ${HOME}/impt/foss-tmp:/app/foss-tmp
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker
-      - ./foss:/app/foss:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
@@ -36,15 +37,18 @@ services:
     environment:
       PYTHONPATH: /app
       HOST_UPLOADS_PATH: ${HOME}/impt/uploads
+      HOST_FOSS_PATH: ${HOME}/impt/foss
+      HOST_TMP_PATH: ${HOME}/impt/foss-tmp
     user: "1001:1001"
     group_add:
       - ${DOCKER_GID:-999}
     volumes:
       - ${HOME}/impt/uploads:/app/uploads
+      - ${HOME}/impt/foss:/app/foss:ro
+      - ${HOME}/impt/foss-tmp:/app/foss-tmp
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker
       - impt-maven-cache:/root/.m2
-      - ./foss:/app/foss:ro
 
   beat:
     build: .
