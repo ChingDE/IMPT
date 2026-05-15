@@ -74,22 +74,94 @@ class StrykerAdapter:
             self._run_stryker_docker()
             return self._parse_results()
 
+    def _project_hash(self) -> str:
+        """Compute a hash of all source files to identify the project uniquely."""
+        import hashlib
+        h = hashlib.md5()
+        for ext in ("*.js", "*.ts", "*.java", "*.py"):
+            for f in sorted(self.project_dir.rglob(ext)):
+                if "node_modules" not in str(f):
+                    try:
+                        h.update(f.read_bytes())
+                    except Exception:
+                        pass
+        return h.hexdigest()
+
+    def _global_cache_dir(self) -> Path:
+        """Shared cache directory across all sessions, keyed by project hash."""
+        import os
+        # Use a sibling directory of the uploads folder
+        uploads_root = self.project_dir
+        # Walk up to find the uploads root (/app/uploads or host equivalent)
+        for _ in range(6):
+            uploads_root = uploads_root.parent
+            if uploads_root.name == "uploads":
+                break
+        cache_root = uploads_root.parent / "stryker-cache"
+        cache_root.mkdir(exist_ok=True)
+        return cache_root
+
+    def _cached_report(self) -> Optional[Path]:
+        """Look up a cached mutation.json for this project hash."""
+        try:
+            h     = self._project_hash()
+            cache = self._global_cache_dir() / h / "mutation.json"
+            if cache.exists():
+                log.info("Project cache hit (hash=%s)", h[:8])
+                return cache
+        except Exception as e:
+            log.debug("Cache lookup failed: %s", e)
+        return None
+
+    def _save_to_cache(self, report_path: Path) -> None:
+        """Save the mutation report to the global project cache."""
+        try:
+            import shutil
+            h          = self._project_hash()
+            cache_dir  = self._global_cache_dir() / h
+            cache_dir.mkdir(exist_ok=True)
+            shutil.copy2(report_path, cache_dir / "mutation.json")
+            log.info("Saved report to project cache (hash=%s)", h[:8])
+        except Exception as e:
+            log.debug("Cache save failed (non-fatal): %s", e)
+
     def enumerate(self) -> List[Mutant]:
         """
-        Phase 1: Enumerate all mutants in ~3 seconds using --dryRunOnly.
-        Produces mutation.json with all 657 mutant locations.
-        IMPT then scores/selects from this list before any real execution.
+        Phase 1: Get full mutant list.
+        Uses a global project-level cache so the same project never runs
+        the full Stryker exhaustive test more than once across all sessions.
         """
         self._ensure_deps()
         self._ensure_config()
-        # Clear old report so we get a fresh enumeration
+
+        # 1. Check global project cache (by source file hash)
+        cached = self._cached_report()
+        if cached:
+            log.info("Using globally cached report — skipping Stryker run")
+            # Copy to session reports dir so _find_report() works
+            import shutil
+            dest = self.project_dir / "reports" / "mutation"
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(cached, dest / "mutation.json")
+            return self._parse_results()
+
+        # 2. Check session-local report (from a previous run on this session)
         report = self._find_report()
         if report:
-            report.unlink()
-        log.info("Enumerating mutants via --incremental --dryRunOnly...")
-        self._run_stryker_docker(extra_flags="--incremental --dryRunOnly")
+            log.info("Using session-local cached report: %s", report)
+            return self._parse_results()
+
+        # 3. No cache — run Stryker fully (~8 min for chalk)
+        log.info("Phase 1: Full Stryker run to enumerate mutants (no cache found)...")
+        self._run_stryker_docker()
         mutants = self._parse_results()
-        log.info("Enumerated %d mutants in ~3 seconds", len(mutants))
+
+        # 4. Save to global cache for future sessions
+        report = self._find_report()
+        if report:
+            self._save_to_cache(report)
+
+        log.info("Phase 1 complete: %d mutants enumerated and cached globally", len(mutants))
         return mutants
 
     def _run_filtered(self, selected: List[Mutant]) -> List[Mutant]:
