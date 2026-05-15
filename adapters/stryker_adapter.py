@@ -150,47 +150,27 @@ class StrykerAdapter:
 
     def enumerate(self) -> List[Mutant]:
         """
-        Phase 1: Get full mutant list.
-        Uses a global project-level cache so the same project never runs
-        the full Stryker exhaustive test more than once across all sessions.
+        Phase 1: Enumerate all mutants WITHOUT running any tests.
+        Uses --incremental --dryRunOnly which completes in ~3 seconds.
+        IMPT then scores mutants using static analysis factors and selects
+        within the time budget. No exhaustive test run required.
         """
         self._ensure_deps()
         self._ensure_config()
 
-        # 1. Check global project cache (by source file hash)
-        cached = self._cached_report()
-        if cached:
-            log.info("Using globally cached report — skipping Stryker run")
-            # Copy to session reports dir so _find_report() works
-            import shutil
-            dest = self.project_dir / "reports" / "mutation"
-            dest.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(cached, dest / "mutation.json")
-            return self._parse_results()
-
-        # 2. Check session-local report (from a previous run on this session)
+        # Check session-local report first (reuse if already enumerated)
         report = self._find_report()
         if report:
-            log.info("Using session-local cached report: %s", report)
+            log.info("Using existing session report: %s", report)
             return self._parse_results()
 
-        # 3. No cache — run Stryker fully
-        log.info("Phase 1: Full Stryker run to enumerate mutants (no cache found)...")
-        import time as _time
-        t0 = _time.time()
-        self._run_stryker_docker()
-        elapsed = _time.time() - t0
+        # Run --incremental --dryRunOnly: enumerates all mutants in ~3 seconds
+        # No tests are executed — mutants get status Survived (placeholder)
+        # IMPT scores them on static factors and selects within budget
+        log.info("Phase 1: Enumerating mutants via --incremental --dryRunOnly (~3s)...")
+        self._run_stryker_docker(extra_flags="--incremental --dryRunOnly")
         mutants = self._parse_results()
-
-        # 4. Save report + timing to global cache
-        report = self._find_report()
-        if report:
-            self._save_to_cache(report,
-                                elapsed_seconds=elapsed,
-                                total_mutants=len(mutants))
-
-        log.info("Phase 1 complete: %d mutants in %.1fs (%.2fs/mutant), cached globally",
-                 len(mutants), elapsed, elapsed / max(len(mutants), 1))
+        log.info("Phase 1 complete: %d mutants enumerated in ~3 seconds", len(mutants))
         return mutants
 
     def _run_filtered(self, selected: List[Mutant]) -> List[Mutant]:
