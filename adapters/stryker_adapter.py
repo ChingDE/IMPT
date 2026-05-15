@@ -65,16 +65,20 @@ class StrykerAdapter:
 
     @staticmethod
     def _ensure_writable(project_dir: Path) -> Path:
-        """Return a writable copy of project_dir if it's read-only."""
-        import os, shutil
+        """Return a writable copy of project_dir if it's read-only.
+        Copies to /app/foss-tmp/<name> which is host-mounted so Docker-in-Docker
+        can volume-mount it correctly."""
+        import shutil
         try:
             test_file = project_dir / ".write_test"
             test_file.touch()
             test_file.unlink()
             return project_dir  # already writable
         except (OSError, PermissionError):
-            # Read-only — copy to /tmp/impt-foss/<dirname>
-            work_dir = Path("/tmp/impt-foss") / project_dir.name
+            # Read-only — copy to /app/foss-tmp/<dirname> (host-mounted, writable)
+            work_base = Path("/app/foss-tmp")
+            work_base.mkdir(parents=True, exist_ok=True)
+            work_dir = work_base / project_dir.name
             if not work_dir.exists():
                 log.info("Copying read-only FOSS project to writable workdir: %s", work_dir)
                 shutil.copytree(str(project_dir), str(work_dir), symlinks=False)
@@ -341,19 +345,18 @@ class StrykerAdapter:
     def _host_project_dir(self) -> str:
         """
         Translate container path to host path for Docker-in-Docker volume mounts.
-        The worker runs inside a container where /app/uploads is bind-mounted
-        from the host at ~/impt/uploads. Nested docker run commands need the
-        HOST path as the volume source, not the container-internal path.
+        Handles uploads, foss (read-only mount), and foss-tmp (writable copy).
         """
         path = str(self.project_dir)
-        # Common container->host path translations
-        translations = [
-            ("/app/uploads", "/home/imptuser/impt/uploads"),
-            ("/app/uploads", "/root/impt/uploads"),
-        ]
         import os
         host_uploads = os.environ.get("HOST_UPLOADS_PATH", "/home/imptuser/impt/uploads")
-        translations.insert(0, ("/app/uploads", host_uploads))
+        host_foss    = os.environ.get("HOST_FOSS_PATH",    "/home/imptuser/impt/foss")
+        host_tmp     = os.environ.get("HOST_TMP_PATH",     "/home/imptuser/impt/foss-tmp")
+        translations = [
+            ("/app/uploads",   host_uploads),
+            ("/app/foss",      host_foss),
+            ("/tmp/impt-foss", host_tmp),
+        ]
         for container_prefix, host_prefix in translations:
             if path.startswith(container_prefix):
                 return host_prefix + path[len(container_prefix):]
@@ -463,19 +466,18 @@ class StrykerAdapter:
     def _host_project_dir(self) -> str:
         """
         Translate container path to host path for Docker-in-Docker volume mounts.
-        The worker runs inside a container where /app/uploads is bind-mounted
-        from the host at ~/impt/uploads. Nested docker run commands need the
-        HOST path as the volume source, not the container-internal path.
+        Handles uploads, foss (read-only mount), and foss-tmp (writable copy).
         """
         path = str(self.project_dir)
-        # Common container->host path translations
-        translations = [
-            ("/app/uploads", "/home/imptuser/impt/uploads"),
-            ("/app/uploads", "/root/impt/uploads"),
-        ]
         import os
         host_uploads = os.environ.get("HOST_UPLOADS_PATH", "/home/imptuser/impt/uploads")
-        translations.insert(0, ("/app/uploads", host_uploads))
+        host_foss    = os.environ.get("HOST_FOSS_PATH",    "/home/imptuser/impt/foss")
+        host_tmp     = os.environ.get("HOST_TMP_PATH",     "/home/imptuser/impt/foss-tmp")
+        translations = [
+            ("/app/uploads",   host_uploads),
+            ("/app/foss",      host_foss),
+            ("/tmp/impt-foss", host_tmp),
+        ]
         for container_prefix, host_prefix in translations:
             if path.startswith(container_prefix):
                 return host_prefix + path[len(container_prefix):]
