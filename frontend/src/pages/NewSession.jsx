@@ -1,7 +1,7 @@
 // src/pages/NewSession.jsx  FR051–FR096
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { createSession, getSession, uploadProject, configureOperators, setBudget, startTesting, listFossProjects } from '../api/client';
+import { createSession, getSession, uploadProject, configureOperators, setBudget, startTesting, listFossProjects, updateSession } from '../api/client';
 import { AppShell, WizardHeader, Alert, InfoBox, TooltipIcon } from '../components/UI';
 
 // Operators supported by IMPT — grouped by framework support
@@ -258,8 +258,6 @@ export function NewSessionUpload() {
                     if (!fossSelected) return;
                     setLoading(true); setError('');
                     try {
-                      // Patch session with foss_project_id and language
-                      const { updateSession } = await import('../api/client');
                       await updateSession(id, { foss_project_id: fossSelected.id, language: fossSelected.language });
                       nav(`/sessions/${id}/operators`);
                     } catch(e){ setError(e.response?.data?.detail||'Failed to select project.'); }
