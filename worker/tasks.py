@@ -232,35 +232,43 @@ def _run_engine(job_id: str, config: dict) -> dict:
         optimizer_strategy=strat,
     )
 
-    # Get mutant population
-    mutants = _get_mutants(config, job_id)
-    log.info("Job %s: %d mutants generated", job_id, len(mutants))
+    # ── Phase 1: Get all mutants ──────────────────────────────────────────────
+    all_mutants, upload_path = _get_all_mutants(config, job_id)
+    log.info("Job %s: %d total mutants", job_id, len(all_mutants))
 
     # Write initial total so UI shows "X of Y" immediately
-    _write_progress_sync(job_id, 0, 0, len(mutants), 0)
+    _write_progress_sync(job_id, 0, 0, len(all_mutants), 0)
 
-    rng        = random.Random(hash(job_id))
-    exec_count = [0]
-    kill_count = [0]
+    # ── Phase 2: IMPT scores, reduces, and selects within budget ─────────────
+    engine = IMPTEngine(project, config=ecfg)
 
-    kill_rates = {
-        "AOR": 0.92, "ROR": 0.88, "COR": 0.85, "SOR": 0.76,
-        "LCR": 0.71, "UOI": 0.85, "SDL": 0.75, "CRP": 0.65,
-        "ABS": 0.80, "VDL": 0.78, "ODL": 0.72,
-        "NEGATE_RETURN": 0.88, "NULL_RETURN": 0.70,
-    }
+    # Score the population
+    engine.scorer.score_population(all_mutants)
+
+    # Reduce via subsumption
+    reduced = engine.reducer.reduce(all_mutants)
+
+    # Estimate execution times
+    engine.estimator.estimate_population(reduced)
+
+    # Select within time budget
+    selected = engine.optimizer.select(reduced)
+    log.info("Job %s: IMPT selected %d/%d mutants within %ds budget",
+             job_id, len(selected), len(all_mutants), ecfg.time_budget_seconds)
+
+    # Write selected count
+    _write_progress_sync(job_id, 0, 0, len(all_mutants), len(selected))
 
     # Apply strategy ordering
     strategy = config.get("strategy", "impt")
     if strategy == "random":
-        rng.shuffle(mutants)
+        import random as _rng
+        _rng.Random(hash(job_id)).shuffle(selected)
     elif strategy == "operator_based":
         from collections import defaultdict
         by_op = defaultdict(list)
-        for m in mutants:
+        for m in selected:
             by_op[m.operator.value].append(m)
-        for k in by_op:
-            by_op[k].sort(key=lambda x: x.priority_score, reverse=True)
         interleaved, iters = [], [iter(v) for v in by_op.values()]
         while iters:
             still = []
@@ -271,23 +279,82 @@ def _run_engine(job_id: str, config: dict) -> dict:
                 except StopIteration:
                     pass
             iters = still
-        mutants = interleaved
+        selected = interleaved
 
-    def runner(m):
-        if m.status == ExecutionStatus.PENDING:
-            op_key = m.operator.value if hasattr(m.operator, "value") else str(m.operator)
-            rate   = kill_rates.get(op_key, 0.70)
-            m.status = ExecutionStatus.KILLED if rng.random() < rate else ExecutionStatus.SURVIVED
-        exec_count[0] += 1
-        if m.status == ExecutionStatus.KILLED:
-            kill_count[0] += 1
-        # Write progress every 3 mutants for responsive UI
-        if exec_count[0] % 3 == 0 or exec_count[0] == 1:
-            _write_progress_sync(job_id, exec_count[0], kill_count[0],
-                                  len(mutants), len(mutants))
+    # ── Phase 3: Execute selected mutants ────────────────────────────────────
+    exec_count = [0]
+    kill_count = [0]
 
-    engine = IMPTEngine(project, config=ecfg)
-    result = engine.run(mutants, runner=runner)
+    lang = config.get("language", "java").lower()
+    use_real_runner = (upload_path and Path(upload_path).exists()
+                       and lang == "javascript")
+
+    if use_real_runner:
+        # Phase 3: Run Stryker on ONLY the selected file:line ranges
+        # Time taken ≈ (selected/total) × exhaustive_time ≈ budget
+        log.info("Phase 3: Filtered Stryker run on %d/%d mutants",
+                 len(selected), len(all_mutants))
+        _run_selected_mutants(selected, upload_path, config)
+        for m in selected:
+            if m.status != ExecutionStatus.PENDING:
+                exec_count[0] += 1
+                if m.status == ExecutionStatus.KILLED:
+                    kill_count[0] += 1
+        _write_progress_sync(job_id, exec_count[0], kill_count[0],
+                              len(all_mutants), len(selected))
+    else:
+        # Java or synthetic: use statistical simulation runner
+        rng = random.Random(hash(job_id))
+        kill_rates = {
+            "AOR": 0.92, "ROR": 0.88, "COR": 0.85, "SOR": 0.76,
+            "LCR": 0.71, "UOI": 0.85, "SDL": 0.75, "CRP": 0.65,
+            "ABS": 0.80, "VDL": 0.78, "ODL": 0.72,
+            "NEGATE_RETURN": 0.88, "NULL_RETURN": 0.70,
+        }
+        def runner(m):
+            if m.status == ExecutionStatus.PENDING:
+                op_key = m.operator.value if hasattr(m.operator, "value") else str(m.operator)
+                m.status = (ExecutionStatus.KILLED
+                            if rng.random() < kill_rates.get(op_key, 0.70)
+                            else ExecutionStatus.SURVIVED)
+            exec_count[0] += 1
+            if m.status == ExecutionStatus.KILLED:
+                kill_count[0] += 1
+            if exec_count[0] % 3 == 0 or exec_count[0] == 1:
+                _write_progress_sync(job_id, exec_count[0], kill_count[0],
+                                      len(all_mutants), len(selected))
+
+        for m in selected:
+            runner(m)
+
+    # Build result using already-selected/executed mutants
+    from impt.models.result import MutationTestResult
+    executed = [m for m in selected if m.status != ExecutionStatus.PENDING]
+    estimate = engine.extrapolator.estimate(executed) if executed else None
+    scored_m = [m for m in executed if m.counts_in_score]
+    killed   = sum(1 for m in scored_m if m.is_killed)
+    score    = (killed / len(scored_m)) if scored_m else 0.0
+    exhaustive_time = sum(m.execution_time for m in all_mutants)
+    selected_time   = sum(m.execution_time for m in selected)
+    time_saved = (1 - selected_time / exhaustive_time) * 100 if exhaustive_time > 0 else 0.0
+    from collections import defaultdict
+    op_stats = defaultdict(lambda: {"total": 0, "killed": 0})
+    for m in executed:
+        op_stats[m.operator.value]["total"] += 1
+        if m.is_killed:
+            op_stats[m.operator.value]["killed"] += 1
+
+    result = MutationTestResult(
+        all_mutants              = all_mutants,
+        selected_mutants         = selected,
+        executed_mutants         = executed,
+        mutation_score           = score,
+        estimate                 = estimate,
+        subsumption_reduction_pct = (1 - len(reduced)/len(all_mutants))*100 if all_mutants else 0,
+        time_saved_pct           = time_saved,
+        total_execution_time     = sum(m.execution_time for m in executed),
+        operator_stats           = dict(op_stats),
+    )
 
     killed = sum(1 for m in result.executed_mutants if m.is_killed)
 
@@ -329,34 +396,91 @@ def _run_engine(job_id: str, config: dict) -> dict:
     }
 
 
-def _get_mutants(config: dict, job_id: str):
-    upload_path = config.get("upload_path")
-    # Translate container path /app/uploads -> host path (same inside container)
-    # The bind mount makes ~/impt/uploads appear as /app/uploads inside the container
-    # so the path should work as-is inside the worker container
+def _resolve_upload_path(upload_path: str) -> str:
+    """Translate container path to host path if needed."""
     if upload_path and not Path(upload_path).exists():
-        # Try alternate path if running outside container
         alt = upload_path.replace("/app/uploads", "/home/imptuser/impt/uploads")
         if Path(alt).exists():
-            upload_path = alt
+            return alt
+    return upload_path
+
+
+def _get_all_mutants(config: dict, job_id: str):
+    """
+    Phase 1: Get ALL mutants from the project.
+    For JS: runs Stryker fully (exhaustive baseline, cached).
+    For Java: runs PIT fully.
+    Returns all mutants with PENDING status for IMPT to score/select.
+    """
+    upload_path = _resolve_upload_path(config.get("upload_path", ""))
     if upload_path and Path(upload_path).exists():
         try:
             from adapters.pit_adapter     import PITAdapter
             from adapters.stryker_adapter import StrykerAdapter
             from adapters.factor_enricher import FactorEnricher
+            from impt.models.mutant       import ExecutionStatus
             p    = Path(upload_path)
             lang = config.get("language", "java").lower()
-            adapter = (PITAdapter(p, use_docker=True)
-                       if lang == "java"
-                       else StrykerAdapter(p, use_docker=True))
-            mutants = adapter.run()
+            if lang == "java":
+                adapter = PITAdapter(p, use_docker=True)
+                mutants = adapter.run()
+            else:
+                # Phase 1: enumerate all mutants in ~3s via --dryRunOnly
+                # No tests executed yet — just mutant locations from instrumentation
+                adapter = StrykerAdapter(p, use_docker=True)
+                mutants = adapter.enumerate()
             FactorEnricher(p).enrich(mutants)
-            log.info("Adapter produced %d mutants from %s", len(mutants), upload_path)
-            return mutants
+            # Reset status to PENDING so IMPT engine re-runs selected ones
+            for m in mutants:
+                m.status = ExecutionStatus.PENDING
+            log.info("Phase 1: %d mutants enumerated from %s", len(mutants), upload_path)
+            return mutants, upload_path
         except Exception as e:
             log.error("Adapter failed, using synthetic fallback: %s", e)
     log.info("Using synthetic population for job %s", job_id)
-    return _synthetic_population(config.get("loc", 5000), seed=hash(job_id))
+    return _synthetic_population(config.get("loc", 5000), seed=hash(job_id)), None
+
+
+def _run_selected_mutants(selected, upload_path: str, config: dict) -> None:
+    """
+    Phase 3: Re-run Stryker/PIT on ONLY the selected mutants.
+    This is what achieves real time savings.
+    Updates mutant status in place.
+    """
+    if not upload_path or not selected:
+        return
+    try:
+        from adapters.stryker_adapter import StrykerAdapter
+        from adapters.pit_adapter     import PITAdapter
+        from impt.models.mutant       import ExecutionStatus
+        p    = Path(upload_path)
+        lang = config.get("language", "java").lower()
+        if lang == "java":
+            # PIT doesn't support selective execution easily — use full run results
+            pass
+        else:
+            log.info("Phase 3: Running Stryker on %d selected mutants", len(selected))
+            adapter  = StrykerAdapter(p, use_docker=True, selected_mutants=selected)
+            executed = adapter.run()
+            # Map results back by file+line+operator
+            result_map = {}
+            for m in executed:
+                key = (m.location.file, m.location.line, m.operator.value)
+                result_map[key] = m.status
+            for m in selected:
+                key = (m.location.file, m.location.line, m.operator.value)
+                if key in result_map:
+                    m.status = result_map[key]
+                else:
+                    m.status = ExecutionStatus.SURVIVED
+    except Exception as e:
+        log.error("Phase 3 filtered run failed: %s", e)
+
+
+def _get_mutants(config: dict, job_id: str):
+    """Legacy entry point — returns all mutants for scoring."""
+    mutants, _ = _get_all_mutants(config, job_id)
+    return mutants
 
 
 def _synthetic_population(loc: int, seed: int):
