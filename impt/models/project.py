@@ -51,4 +51,8 @@ class Project:
     config:     ProjectConfig     = field(default_factory=ProjectConfig)
 
     def base_execution_time_per_loc(self) -> float:
-        return 0.015 if self.framework == MutationFramework.PIT else 0.012
+        # Conservative defaults — actual timing from cache overrides these in tasks.py
+        # PIT/Java: ~3ms per LOC (whole test suite per mutant)
+        # Stryker/JS: ~2ms per LOC (parallel test execution)
+        # Floor is enforced in ExecutionTimeEstimator to avoid 0-second estimates
+        return 0.003 if self.framework == MutationFramework.PIT else 0.002

@@ -113,17 +113,40 @@ class StrykerAdapter:
             log.debug("Cache lookup failed: %s", e)
         return None
 
-    def _save_to_cache(self, report_path: Path) -> None:
-        """Save the mutation report to the global project cache."""
+    def _save_to_cache(self, report_path: Path,
+                        elapsed_seconds: float = 0.0,
+                        total_mutants: int = 0) -> None:
+        """Save the mutation report and timing metadata to the global project cache."""
         try:
-            import shutil
+            import shutil, json as _json
             h          = self._project_hash()
             cache_dir  = self._global_cache_dir() / h
             cache_dir.mkdir(exist_ok=True)
             shutil.copy2(report_path, cache_dir / "mutation.json")
-            log.info("Saved report to project cache (hash=%s)", h[:8])
+            # Save per-mutant execution time for calibrating the time estimator
+            if elapsed_seconds > 0 and total_mutants > 0:
+                meta = {
+                    "elapsed_seconds": elapsed_seconds,
+                    "total_mutants":   total_mutants,
+                    "seconds_per_mutant": elapsed_seconds / total_mutants,
+                }
+                (cache_dir / "meta.json").write_text(_json.dumps(meta))
+            log.info("Saved report to project cache (hash=%s, %.1fs/mutant)",
+                     h[:8], elapsed_seconds / max(total_mutants, 1))
         except Exception as e:
             log.debug("Cache save failed (non-fatal): %s", e)
+
+    def _cached_seconds_per_mutant(self) -> float:
+        """Return observed seconds-per-mutant from cache, or 0 if unknown."""
+        try:
+            import json as _json
+            h    = self._project_hash()
+            meta = self._global_cache_dir() / h / "meta.json"
+            if meta.exists():
+                return _json.loads(meta.read_text()).get("seconds_per_mutant", 0.0)
+        except Exception:
+            pass
+        return 0.0
 
     def enumerate(self) -> List[Mutant]:
         """
@@ -151,17 +174,23 @@ class StrykerAdapter:
             log.info("Using session-local cached report: %s", report)
             return self._parse_results()
 
-        # 3. No cache — run Stryker fully (~8 min for chalk)
+        # 3. No cache — run Stryker fully
         log.info("Phase 1: Full Stryker run to enumerate mutants (no cache found)...")
+        import time as _time
+        t0 = _time.time()
         self._run_stryker_docker()
+        elapsed = _time.time() - t0
         mutants = self._parse_results()
 
-        # 4. Save to global cache for future sessions
+        # 4. Save report + timing to global cache
         report = self._find_report()
         if report:
-            self._save_to_cache(report)
+            self._save_to_cache(report,
+                                elapsed_seconds=elapsed,
+                                total_mutants=len(mutants))
 
-        log.info("Phase 1 complete: %d mutants enumerated and cached globally", len(mutants))
+        log.info("Phase 1 complete: %d mutants in %.1fs (%.2fs/mutant), cached globally",
+                 len(mutants), elapsed, elapsed / max(len(mutants), 1))
         return mutants
 
     def _run_filtered(self, selected: List[Mutant]) -> List[Mutant]:
