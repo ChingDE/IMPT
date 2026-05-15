@@ -52,6 +52,21 @@ export default function History() {
         </div>
 
         <div className="card">
+          {sessions.length === 0 && !search && filter === 'all' ? (
+            <div style={{ textAlign:'center', padding:'60px 20px' }}>
+              <div style={{ fontSize:48, marginBottom:16 }}>🧬</div>
+              <div style={{ fontSize:18, fontWeight:700, color:'var(--gray-700)', marginBottom:8 }}>
+                No test sessions yet
+              </div>
+              <div style={{ fontSize:14, color:'var(--gray-500)', marginBottom:24, lineHeight:1.65 }}>
+                Run your first mutation test to see results here.<br />
+                You can upload your own project or use one of our pre-loaded FOSS benchmarks.
+              </div>
+              <button className="btn btn-primary btn-lg" onClick={() => nav('/new-session')}>
+                🚀 Start a Test Session
+              </button>
+            </div>
+          ) : (
           <table className="data-table">
             <thead><tr><th>Session Name</th><th>Language</th><th>Status</th><th>Created</th><th>Last Modified</th><th>Actions</th></tr></thead>
             <tbody>
@@ -93,6 +108,7 @@ export default function History() {
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
       {deleteTarget && <ConfirmModal title="Delete Session" message={`Delete "${deleteTarget.name}"? This cannot be undone.`}

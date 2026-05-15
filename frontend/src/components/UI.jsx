@@ -1,7 +1,6 @@
 // src/components/UI.jsx
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useState } from 'react';
 import {
   Home, PlayCircle, BarChart2, Settings, Clock, Save, HelpCircle,
   User, Shield, Info, CheckCircle, XCircle, AlertTriangle, X
@@ -11,8 +10,12 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 
 // ── Logo SVG ──────────────────────────────────────────────────────
 export const LogoMark = ({ size = 20, bg = '#7C3AED' }) => (
-  <img src="/logo.png" width={size * 1.8} height={size * 1.8} alt="IMPT Logo"
-    style={{ objectFit: 'contain', borderRadius: 8 }} />
+  <div style={{ width: size*1.8, height: size*1.8, background: bg, borderRadius: 8, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+      <polygon points="10,2 18,7 18,13 10,18 2,13 2,7" fill="rgba(255,255,255,0.85)" />
+      <polygon points="10,2 18,7 10,10 2,7" fill="#fff" />
+    </svg>
+  </div>
 );
 
 // ── Sidebar ───────────────────────────────────────────────────────
@@ -24,8 +27,7 @@ export function Sidebar() {
   const navItems = [
     { path: '/dashboard',   label: 'Dashboard',         icon: Home },
     { path: '/new-session', label: 'New Test Session',  icon: PlayCircle },
-    { path: '/results',     label: 'Results & Reports', icon: BarChart2 },
-    { path: '/history',     label: 'History',           icon: Clock },
+    { path: '/history',     label: 'Results & Reports', icon: BarChart2 },
     { path: '/help',        label: 'Help & Docs',       icon: HelpCircle },
   ];
 
