@@ -147,7 +147,6 @@ class StrykerAdapter:
             "--network", network,
             "--memory", "2g",
             "--cpus", "2",
-            "--user", "root",
             "-v", str(self.project_dir) + ":/project",
             "-w", "/project",
             self.sandbox_image,
@@ -155,19 +154,28 @@ class StrykerAdapter:
 
     def _install_deps_docker(self):
         nm = self.project_dir / "node_modules"
-        # Always reinstall — ensures deps match current config
         if nm.exists():
             import shutil
             shutil.rmtree(nm)
             log.info("Cleared old node_modules")
-        log.info("Phase 1: npm install (network enabled)...")
-        cmd = self._docker_base(network="bridge") + [
+        log.info("Phase 1: npm install (network enabled, running as root)...")
+        # Use root explicitly for install phase so it can write to mounted volume
+        cmd = [
+            "docker", "run", "--rm",
+            "--network", "bridge",
+            "--memory", "2g",
+            "--user", "root",
+            "-v", str(self.project_dir) + ":/project",
+            "-w", "/project",
+            self.sandbox_image,
             "sh", "-c",
             (
                 "npm install --unsafe-perm --no-audit --no-fund 2>&1 ; "
                 "[ -d node_modules/@stryker-mutator/core ] || "
                 "npm install --unsafe-perm --no-audit --save-dev "
-                "@stryker-mutator/core 2>&1 || true"
+                "@stryker-mutator/core 2>&1 || true ; "
+                # Fix permissions so non-root can read node_modules
+                "chmod -R 755 node_modules 2>/dev/null || true"
             )
         ]
         try:
