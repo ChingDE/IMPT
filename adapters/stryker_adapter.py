@@ -153,13 +153,13 @@ class StrykerAdapter:
         ]
 
     def _install_deps_docker(self):
+        """Phase 1: npm install with network, as root."""
         nm = self.project_dir / "node_modules"
         if nm.exists():
             import shutil
             shutil.rmtree(nm)
             log.info("Cleared old node_modules")
-        log.info("Phase 1: npm install (network enabled, running as root)...")
-        # Use root explicitly for install phase so it can write to mounted volume
+        log.info("Phase 1: npm install (network enabled)...")
         cmd = [
             "docker", "run", "--rm",
             "--network", "bridge",
@@ -174,8 +174,8 @@ class StrykerAdapter:
                 "[ -d node_modules/@stryker-mutator/core ] || "
                 "npm install --unsafe-perm --no-audit --save-dev "
                 "@stryker-mutator/core 2>&1 || true ; "
-                # Fix permissions so non-root can read node_modules
-                "chmod -R 755 node_modules 2>/dev/null || true"
+                "chmod -R 777 node_modules 2>/dev/null || true ; "
+                "chmod -R 777 . 2>/dev/null || true"
             )
         ]
         try:
@@ -185,7 +185,8 @@ class StrykerAdapter:
             log.warning("npm install warning: %s", e)
 
     def _run_stryker_docker(self):
-        log.info("Phase 2: Running Stryker (network disabled)...")
+        """Phase 2: Run Stryker without network, without root (so ava works)."""
+        log.info("Phase 2: Running Stryker (network disabled, non-root)...")
         cmd = self._docker_base(network="none") + [
             "sh", "-c", "npx stryker run --fileLogLevel off 2>&1"
         ]
