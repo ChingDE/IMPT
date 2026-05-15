@@ -248,6 +248,106 @@ class StrykerAdapter:
         return cmd
 
     def _ensure_deps(self):
+        """Install node_modules. Uses mkdir-based lock for concurrent worker safety."""
+        nm        = self.project_dir / "node_modules"
+        lock_dir  = self.project_dir / ".npm-lock"
+
+        # Fast path
+        if nm.exists() and any(nm.iterdir()):
+            log.info("node_modules exists, skipping install")
+            return
+
+        # mkdir-based atomic lock (mkdir is atomic on Linux)
+        acquired = False
+        for _ in range(60):  # wait up to 60 seconds
+            try:
+                lock_dir.mkdir(exist_ok=False)
+                acquired = True
+                break
+            except FileExistsError:
+                import time
+                time.sleep(1)
+
+        if not acquired:
+            # Another worker holds the lock — wait for node_modules to appear
+            log.info("Waiting for concurrent npm install to complete...")
+            import time
+            for _ in range(120):
+                if nm.exists() and any(nm.iterdir()):
+                    log.info("node_modules appeared, continuing")
+                    return
+                time.sleep(1)
+            log.warning("Timed out waiting for node_modules")
+            return
+
+        try:
+            # Re-check after acquiring lock
+            if nm.exists() and any(nm.iterdir()):
+                log.info("node_modules already installed")
+                return
+
+            log.info("Installing npm dependencies for %s...", self.project_dir)
+            cmd = self._docker_base(network="bridge", user="root") + [
+                "sh", "-c",
+                (
+                    "cd /project && "
+                    "test -f package.json || (echo 'ERROR: no package.json' && ls && exit 1) ; "
+                    "npm install --unsafe-perm --no-audit --no-fund 2>&1 ; "
+                    "[ -d /project/node_modules/@stryker-mutator/core ] || "
+                    "npm install --unsafe-perm --no-audit --save-dev "
+                    "@stryker-mutator/core 2>&1 || true ; "
+                    "chmod -R 777 /project 2>/dev/null || true"
+                )
+            ]
+            r = subprocess.run(cmd, timeout=600, capture_output=True, text=True)
+            log.info("npm install exit=%d stdout=%s",
+                     r.returncode, r.stdout[-300:] if r.stdout else "")
+            if not nm.exists():
+                raise RuntimeError(
+                    "npm install completed but node_modules not found. "
+                    "stdout=" + (r.stdout or "")[-300:]
+                )
+            log.info("node_modules ready at %s", nm)
+        finally:
+            try:
+                lock_dir.rmdir()
+            except Exception:
+                pass
+
+
+    def _ensure_config(self, mutate_override=None):
+        # Always regenerate config
+        for old_cfg in ["stryker.config.js", "stryker.config.cjs", ".strykerrc.json"]:
+            p = self.project_dir / old_cfg
+            if p.exists():
+                p.unlink()
+        test_runner, test_command, is_esm, src_pattern = self._detect_project()
+        config = self._build_config(test_runner, test_command, src_pattern,
+                                     mutate_override)
+        name = "stryker.config.cjs" if is_esm else "stryker.config.js"
+        (self.project_dir / name).write_text(config)
+        log.info("Generated %s: runner=%s src=%s filtered=%s",
+                 name, test_runner, src_pattern, bool(mutate_override))
+
+    # ── Docker execution ──────────────────────────────────────────────────────
+
+    def _docker_base(self, network="none", user=None):
+        cmd = [
+            "docker", "run", "--rm",
+            "--network", network,
+            "--memory", "2g",
+            "--cpus", "2",
+        ]
+        if user:
+            cmd += ["--user", user]
+        cmd += [
+            "-v", str(self.project_dir) + ":/project",
+            "-w", "/project",
+            self.sandbox_image,
+        ]
+        return cmd
+
+    def _ensure_deps(self):
         """Install node_modules if missing. File-locked to prevent concurrent installs."""
         import fcntl
         nm        = self.project_dir / "node_modules"
@@ -270,10 +370,11 @@ class StrykerAdapter:
             cmd = self._docker_base(network="bridge", user="root") + [
                 "sh", "-c",
                 (
-                    "test -f package.json || (echo 'ERROR: no package.json' && exit 1) ; "
-                    "npm install --unsafe-perm --no-audit --no-fund --prefix /project 2>&1 ; "
-                    "[ -d node_modules/@stryker-mutator/core ] || "
-                    "npm install --unsafe-perm --no-audit --save-dev --prefix /project "
+                    "cd /project && "
+                    "test -f package.json || (echo 'ERROR: no package.json' && ls && exit 1) ; "
+                    "npm install --unsafe-perm --no-audit --no-fund 2>&1 ; "
+                    "[ -d /project/node_modules/@stryker-mutator/core ] || "
+                    "npm install --unsafe-perm --no-audit --save-dev "
                     "@stryker-mutator/core 2>&1 || true ; "
                     "chmod -R 777 /project 2>/dev/null || true"
                 )
