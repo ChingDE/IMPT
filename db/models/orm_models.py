@@ -326,8 +326,9 @@ class OperatorStats(Base):
     total_mutants: Mapped[int]   = mapped_column(Integer, default=0)
     killed_mutants:Mapped[int]   = mapped_column(Integer, default=0)
     kill_rate:     Mapped[float] = mapped_column(Float,   default=0.5)
-    last_updated:  Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow,
-                                                     onupdate=datetime.utcnow)
+    last_updated:  Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True,
+                                                          default=datetime.utcnow,
+                                                          onupdate=datetime.utcnow)
 
 
 class SystemConfig(Base):
