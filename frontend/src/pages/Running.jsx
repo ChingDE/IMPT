@@ -47,7 +47,7 @@ export default function Running() {
           const prev     = prevExec.current[job.id] || 0;
           const current  = job.executed_mutants || 0;
           if (current > prev) {
-            const ops   = ['AOR','ROR','COR','SOR','LCR','UOI','SDL','CRP'];
+            const ops   = ['AOR','ROR','NEGATE_RETURN','COR','UOI','ABS','SDL','LCR','NULL_RETURN','CRP'];
             const files = ['Calculator.js','index.js','utils.js','parser.js'];
             const newCount = Math.min(current - prev, 5);
             const newLogs  = [];
