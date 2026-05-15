@@ -182,7 +182,6 @@ class StrykerAdapter:
         within the time budget. No exhaustive test run required.
         """
         self._ensure_deps()
-        self._ensure_config()
 
         # Check session-local report first (reuse if already enumerated)
         report = self._find_report()
@@ -190,14 +189,21 @@ class StrykerAdapter:
             log.info("Using existing session report: %s", report)
             return self._parse_results()
 
-        # Run --dryRunOnly: enumerates all mutants in ~3 seconds
-        # No tests are executed — mutants get status Survived (placeholder)
-        # IMPT scores them on static factors and selects within budget
-        # Note: --incremental is NOT used here because it suppresses the JSON report
-        log.info("Phase 1: Enumerating mutants via --dryRunOnly (~3s)...")
-        self._run_stryker_docker(extra_flags="--dryRunOnly")
+        # Write a special enumeration config: no-op test runner so Stryker
+        # writes the full JSON report instantly with all mutants as Survived.
+        # No real tests are executed — IMPT scores on static factors only.
+        _, _, is_esm, src_pattern = self._detect_project()
+        enum_config = self._build_enum_config(src_pattern)
+        name = "stryker.config.cjs" if is_esm else "stryker.config.js"
+        for old in ["stryker.config.js", "stryker.config.cjs", ".strykerrc.json"]:
+            p = self.project_dir / old
+            if p.exists():
+                p.unlink()
+        (self.project_dir / name).write_text(enum_config)
+        log.info("Phase 1: Enumerating mutants via no-op test runner (~5s)...")
+        self._run_stryker_docker(extra_flags="")
         mutants = self._parse_results()
-        log.info("Phase 1 complete: %d mutants enumerated in ~3 seconds", len(mutants))
+        log.info("Phase 1 complete: %d mutants enumerated", len(mutants))
         return mutants
 
     def _run_filtered(self, selected: List[Mutant]) -> List[Mutant]:
@@ -276,6 +282,30 @@ class StrykerAdapter:
                 break
 
         return test_runner, test_command, is_esm, src_pattern
+
+    def _build_enum_config(self, src_pattern: str) -> str:
+        """Config for Phase 1 enumeration: no-op test runner so Stryker
+        writes the full JSON report instantly with all mutants as Survived."""
+        mutate_str = f'"{src_pattern}"'
+        lines = [
+            "/** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */",
+            "module.exports = {",
+            "  reporters: ['json'],",
+            "  testRunner: 'command',",
+            "  coverageAnalysis: 'off',",
+            "  commandRunner: { command: 'true' },",  # no-op: exits 0 instantly
+            "  timeoutMS: 10000,",
+            "  timeoutFactor: 1,",
+            "  mutate: [",
+            f"    {mutate_str}",
+            "  ],",
+            "  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],",
+            "  jsonReporter: {",
+            "    fileName: 'reports/mutation/mutation.json'",
+            "  }",
+            "};",
+        ]
+        return "\n".join(lines) + "\n"
 
     def _build_config(self, test_runner, test_command,
                        src_pattern, mutate_override=None):
