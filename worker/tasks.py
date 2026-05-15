@@ -424,13 +424,18 @@ def _get_all_mutants(config: dict, job_id: str):
             if lang == "java":
                 adapter = PITAdapter(p, use_docker=True)
                 mutants = adapter.run()
+                spm = 0.0
             else:
-                # Phase 1: enumerate all mutants in ~3s via --dryRunOnly
-                # No tests executed yet — just mutant locations from instrumentation
                 adapter = StrykerAdapter(p, use_docker=True)
                 mutants = adapter.enumerate()
+                # Get calibrated seconds-per-mutant from cache
+                spm = adapter._cached_seconds_per_mutant()
+                if spm > 0:
+                    log.info("Calibrated execution time: %.2fs per mutant", spm)
+                    # Update each mutant execution time estimate with real measurement
+                    for m in mutants:
+                        m.execution_time = spm
             FactorEnricher(p).enrich(mutants)
-            # Reset status to PENDING so IMPT engine re-runs selected ones
             for m in mutants:
                 m.status = ExecutionStatus.PENDING
             log.info("Phase 1: %d mutants enumerated from %s", len(mutants), upload_path)
