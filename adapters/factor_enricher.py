@@ -19,19 +19,19 @@ SECURITY_KEYWORDS = {
 # Literature-based defaults (used when DB is unavailable)
 # Sources: Andrews et al. 2005, Just et al. 2014, Papadakis et al. 2019
 LITERATURE_KILL_RATES: Dict[str, float] = {
-    "AOR":           0.92,
-    "ROR":           0.88,
-    "NEGATE_RETURN": 0.85,
-    "COR":           0.83,
-    "UOI":           0.82,
-    "SDL":           0.78,
-    "ABS":           0.76,
-    "LCR":           0.75,
-    "VDL":           0.74,
-    "ODL":           0.73,
-    "SOR":           0.72,
-    "CRP":           0.70,
-    "NULL_RETURN":   0.68,
+    # Operators actually produced by PIT (Java) and/or Stryker (JS)
+    # Sources: Andrews et al. 2005, Just et al. 2014, Papadakis et al. 2019
+    "AOR":           0.92,   # PIT + Stryker
+    "ROR":           0.88,   # PIT + Stryker
+    "NEGATE_RETURN": 0.85,   # PIT + Stryker
+    "COR":           0.83,   # PIT + Stryker
+    "UOI":           0.82,   # PIT + Stryker
+    "ABS":           0.76,   # PIT only
+    "SDL":           0.78,   # PIT + Stryker
+    "LCR":           0.75,   # Stryker only
+    "NULL_RETURN":   0.68,   # PIT + Stryker
+    "CRP":           0.70,   # Stryker only
+    # SOR/VDL/ODL omitted — not produced by PIT or Stryker in standard config
 }
 
 

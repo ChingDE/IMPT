@@ -17,20 +17,19 @@ from impt.models.project import Project, MutationFramework
 
 # Manuscript Table (Figure 17, lines 16-20)
 OP_MULTIPLIERS: Dict[str, float] = {
-    "AOR": 1.0,
-    "ROR": 1.1,
-    "COR": 0.9,
-    "SOR": 0.8,
-    "LCR": 1.2,
-    "UOI": 0.7,
-    "SDL": 1.3,
-    "VDL": 1.1,
-    "ODL": 1.0,
-    # Not in manuscript table — use empirically reasonable defaults
-    "ABS":           1.0,
-    "CRP":           1.0,
-    "NULL_RETURN":   0.9,
-    "NEGATE_RETURN": 0.9,
+    # Manuscript table (Figure 17, lines 16-20) — operators produced by PIT/Stryker
+    "AOR": 1.0,   # PIT + Stryker
+    "ROR": 1.1,   # PIT + Stryker
+    "COR": 0.9,   # PIT + Stryker
+    "LCR": 1.2,   # Stryker only
+    "UOI": 0.7,   # PIT + Stryker
+    "SDL": 1.3,   # PIT + Stryker
+    # Not in manuscript table — reasonable empirical defaults
+    "ABS":           1.0,   # PIT only
+    "CRP":           1.0,   # Stryker only
+    "NULL_RETURN":   0.9,   # PIT + Stryker
+    "NEGATE_RETURN": 0.9,   # PIT + Stryker
+    # SOR/VDL/ODL omitted — not produced by PIT or Stryker in standard config
 }
 
 SAFETY_MARGIN     = 1.15   # manuscript line 41

@@ -4,15 +4,20 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { createSession, getSession, uploadProject, configureOperators, setBudget, startTesting } from '../api/client';
 import { AppShell, WizardHeader, Alert, InfoBox, TooltipIcon } from '../components/UI';
 
+// Operators supported by IMPT — grouped by framework support
+// framework: 'both' | 'java' | 'js'
+// SOR/VDL/ODL excluded: neither PIT nor Stryker produces them in standard config
 const OPERATORS = [
-  { code:'AOR', name:'Arithmetic Operator Replacement', eff:92, lvl:'High', desc:'Replaces arithmetic operators (+,-,*,/). Example: a+b → a-b' },
-  { code:'ROR', name:'Relational Operator Replacement', eff:88, lvl:'High', desc:'Changes comparison operators (<,>,==,!=). Example: x<10 → x<=10' },
-  { code:'COR', name:'Conditional Operator Replacement', eff:85, lvl:'High', desc:'Alters boolean conditions. Example: if(a) → if(!a)' },
-  { code:'SOR', name:'Shift Operator Replacement',       eff:76, lvl:'Moderate', desc:'Replaces bitwise shift operators.' },
-  { code:'LCR', name:'Logical Connector Replacement',    eff:71, lvl:'Moderate', desc:'Replace logical connectors. Example: && → ||' },
-  { code:'UOI', name:'Unary Operator Insertion',         eff:85, lvl:'High', desc:'Add/remove unary operators. Example: x → -x' },
-  { code:'SDL', name:'Statement Deletion',               eff:75, lvl:'Moderate', desc:'Remove a statement entirely.' },
-  { code:'CRP', name:'Constant Replacement',             eff:65, lvl:'Moderate', desc:'Replace constants with different values.' },
+  { code:'AOR',           name:'Arithmetic Operator Replacement', eff:92, lvl:'High',     framework:'both', desc:'Replaces arithmetic operators (+,-,*,/,%). Example: a+b → a-b' },
+  { code:'ROR',           name:'Relational Operator Replacement', eff:88, lvl:'High',     framework:'both', desc:'Changes comparison operators (<,>,==,!=). Example: x<10 → x<=10' },
+  { code:'NEGATE_RETURN', name:'Negate Return Value',             eff:85, lvl:'High',     framework:'both', desc:'Negates boolean/primitive return values. Example: return true → return false' },
+  { code:'COR',           name:'Conditional Operator Replacement',eff:83, lvl:'High',     framework:'both', desc:'Removes or alters conditional expressions. Example: if(a&&b) → if(a)' },
+  { code:'UOI',           name:'Unary Operator Insertion',        eff:82, lvl:'High',     framework:'both', desc:'Adds/removes unary operators. Example: x → -x' },
+  { code:'ABS',           name:'Conditional Boundary Shift',      eff:76, lvl:'Moderate', framework:'java', desc:'Shifts boundary conditions. Example: if(x>10) → if(x>=10). Java/PIT only.' },
+  { code:'SDL',           name:'Statement Deletion',              eff:78, lvl:'Moderate', framework:'both', desc:'Deletes an entire statement or block.' },
+  { code:'LCR',           name:'Logical Connector Replacement',   eff:75, lvl:'Moderate', framework:'js',   desc:'Swaps logical connectors. Example: && → ||. JavaScript/Stryker only.' },
+  { code:'NULL_RETURN',   name:'Null/Empty Return Value',         eff:68, lvl:'Moderate', framework:'both', desc:'Replaces return values with null or empty equivalents. Example: return obj → return null' },
+  { code:'CRP',           name:'Constant Replacement',            eff:70, lvl:'Moderate', framework:'js',   desc:'Replaces string/regex constants. JavaScript/Stryker only.' },
 ];
 
 // ── Step 1: Create session ─────────────────────────────────────
@@ -326,6 +331,16 @@ export function NewSessionOperators() {
                   <span className={`eff-tag ${op.lvl==='High'?'eff-high':'eff-med'}`}>
                     {op.eff}% ({op.lvl} Effectiveness)
                   </span>
+                  {op.framework !== 'both' && (
+                    <span style={{
+                      fontSize:'0.7rem', padding:'1px 6px', borderRadius:4, marginLeft:6,
+                      background: op.framework==='java' ? '#dbeafe' : '#dcfce7',
+                      color:      op.framework==='java' ? '#1d4ed8' : '#15803d',
+                      fontWeight: 600,
+                    }}>
+                      {op.framework==='java' ? 'Java/PIT only' : 'JS/Stryker only'}
+                    </span>
+                  )}
                 </div>
                 <div className="op-desc">{op.desc}</div>
               </div>

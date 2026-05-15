@@ -31,16 +31,18 @@ export default function Help() {
       title: 'Mutation Operators',
       body: `Mutation operators introduce small, systematic changes to your code to verify that your tests can detect them.
 
-AOR (Arithmetic Operator Replacement): Replaces +, -, *, / with each other. 92% effectiveness.
-ROR (Relational Operator Replacement): Changes <, >, ==, != comparisons. 88% effectiveness.
-COR (Conditional Operator Replacement): Alters boolean conditions. 85% effectiveness.
-SOR (Shift Operator Replacement): Replaces bitwise shift operators. 76% effectiveness.
-LCR (Logical Connector Replacement): Swaps && and ||. 71% effectiveness.
-UOI (Unary Operator Insertion): Adds/removes negation. 85% effectiveness.
-SDL (Statement Deletion): Removes statements entirely. 75% effectiveness.
-CRP (Constant Replacement): Replaces constants with different values. 65% effectiveness.
+AOR (Arithmetic Operator Replacement): Replaces +, -, *, / with each other. 92% effectiveness. Java & JS.
+ROR (Relational Operator Replacement): Changes <, >, ==, != comparisons. 88% effectiveness. Java & JS.
+NEGATE_RETURN (Negate Return Value): Negates boolean/primitive return values. 85% effectiveness. Java & JS.
+COR (Conditional Operator Replacement): Alters or removes conditions. 83% effectiveness. Java & JS.
+UOI (Unary Operator Insertion): Adds/removes negation operators. 82% effectiveness. Java & JS.
+ABS (Conditional Boundary Shift): Shifts boundary conditions (> → >=). 76% effectiveness. Java/PIT only.
+SDL (Statement Deletion): Removes statements or blocks entirely. 78% effectiveness. Java & JS.
+LCR (Logical Connector Replacement): Swaps && and ||. 75% effectiveness. JS/Stryker only.
+NULL_RETURN (Null/Empty Return): Replaces return values with null or empty. 68% effectiveness. Java & JS.
+CRP (Constant Replacement): Replaces string/regex constants. 70% effectiveness. JS/Stryker only.
 
-High-effectiveness operators (≥85%) are selected by default.`,
+Note: SOR (Shift), VDL (Variable Deletion), and ODL (Operator Deletion) are not available — neither PIT nor Stryker supports them in standard configuration.`,
     },
     faq: {
       title: 'Frequently Asked Questions',

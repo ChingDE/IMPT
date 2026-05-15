@@ -40,10 +40,13 @@ def test_operator_multipliers_applied():
     assert t_sdl > t_uoi
 
 
-def test_all_manuscript_operators_have_multipliers():
-    """All operators in manuscript table must be in OP_MULTIPLIERS."""
-    manuscript_ops = {"AOR", "ROR", "COR", "SOR", "LCR", "UOI", "SDL", "VDL", "ODL"}
-    for op in manuscript_ops:
+def test_all_supported_operators_have_multipliers():
+    """All operators actually produced by PIT/Stryker must be in OP_MULTIPLIERS.
+    SOR, VDL, ODL are excluded — neither PIT nor Stryker produces them."""
+    # Operators actually produced by PIT (Java) and/or Stryker (JS)
+    supported_ops = {"AOR", "ROR", "COR", "LCR", "UOI", "SDL",
+                     "ABS", "CRP", "NULL_RETURN", "NEGATE_RETURN"}
+    for op in supported_ops:
         assert op in OP_MULTIPLIERS, f"{op} missing from OP_MULTIPLIERS"
 
 
