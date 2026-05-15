@@ -504,27 +504,32 @@ async def start_testing(
         "operators": operators,
     }) if False else session.selected_operators)  # no-op, job_ids returned below
 
-    for job in all_jobs:
+    for i, job in enumerate(all_jobs):
         job_config = {
             **config,
             "time_budget_seconds":  job.time_budget_seconds,
             "optimizer_strategy":   job.optimizer_strategy,
             "strategy":             job.strategy,
         }
+        # Stagger comparison jobs by 90 seconds so npm install finishes
+        # before the next job tries to access the same upload directory
+        countdown = i * 90  # IMPT=0s, Random=90s, Operator-Based=180s
         dispatched = False
         if CELERY_AVAILABLE:
             from worker.tasks import run_mutation_job
             try:
-                task = run_mutation_job.delay(job.id, job_config)
+                task = run_mutation_job.apply_async(
+                    args=[job.id, job_config],
+                    countdown=countdown,
+                )
                 await job_repo.mark_running(job.id, task.id)
                 await db.commit()
                 dispatched = True
-                log.info("Job %s dispatched to Celery (%s)", job.id, task.id)
+                log.info("Job %s dispatched to Celery (countdown=%ds)", job.id, countdown)
             except Exception as exc:
                 log.warning("Celery dispatch failed, using thread: %s", exc)
 
         if not dispatched:
-            # Run in a background thread using only sync DB access (no asyncio.run conflict)
             import threading
             from worker.tasks import run_mutation_job_sync
             t = threading.Thread(
