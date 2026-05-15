@@ -34,6 +34,7 @@ services:
     env_file: .env
     environment:
       PYTHONPATH: /app
+      HOST_UPLOADS_PATH: ${HOME}/impt/uploads
     user: "1001:1001"
     group_add:
       - ${DOCKER_GID:-999}

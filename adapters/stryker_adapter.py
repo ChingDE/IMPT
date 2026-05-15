@@ -231,7 +231,29 @@ class StrykerAdapter:
 
     # ── Docker execution ──────────────────────────────────────────────────────
 
+    def _host_project_dir(self) -> str:
+        """
+        Translate container path to host path for Docker-in-Docker volume mounts.
+        The worker runs inside a container where /app/uploads is bind-mounted
+        from the host at ~/impt/uploads. Nested docker run commands need the
+        HOST path as the volume source, not the container-internal path.
+        """
+        path = str(self.project_dir)
+        # Common container->host path translations
+        translations = [
+            ("/app/uploads", "/home/imptuser/impt/uploads"),
+            ("/app/uploads", "/root/impt/uploads"),
+        ]
+        import os
+        host_uploads = os.environ.get("HOST_UPLOADS_PATH", "/home/imptuser/impt/uploads")
+        translations.insert(0, ("/app/uploads", host_uploads))
+        for container_prefix, host_prefix in translations:
+            if path.startswith(container_prefix):
+                return host_prefix + path[len(container_prefix):]
+        return path
+
     def _docker_base(self, network="none", user=None):
+        host_path = self._host_project_dir()
         cmd = [
             "docker", "run", "--rm",
             "--network", network,
@@ -241,7 +263,7 @@ class StrykerAdapter:
         if user:
             cmd += ["--user", user]
         cmd += [
-            "-v", str(self.project_dir) + ":/project",
+            "-v", host_path + ":/project",
             "-w", "/project",
             self.sandbox_image,
         ]
@@ -331,7 +353,29 @@ class StrykerAdapter:
 
     # ── Docker execution ──────────────────────────────────────────────────────
 
+    def _host_project_dir(self) -> str:
+        """
+        Translate container path to host path for Docker-in-Docker volume mounts.
+        The worker runs inside a container where /app/uploads is bind-mounted
+        from the host at ~/impt/uploads. Nested docker run commands need the
+        HOST path as the volume source, not the container-internal path.
+        """
+        path = str(self.project_dir)
+        # Common container->host path translations
+        translations = [
+            ("/app/uploads", "/home/imptuser/impt/uploads"),
+            ("/app/uploads", "/root/impt/uploads"),
+        ]
+        import os
+        host_uploads = os.environ.get("HOST_UPLOADS_PATH", "/home/imptuser/impt/uploads")
+        translations.insert(0, ("/app/uploads", host_uploads))
+        for container_prefix, host_prefix in translations:
+            if path.startswith(container_prefix):
+                return host_prefix + path[len(container_prefix):]
+        return path
+
     def _docker_base(self, network="none", user=None):
+        host_path = self._host_project_dir()
         cmd = [
             "docker", "run", "--rm",
             "--network", network,
@@ -341,7 +385,7 @@ class StrykerAdapter:
         if user:
             cmd += ["--user", user]
         cmd += [
-            "-v", str(self.project_dir) + ":/project",
+            "-v", host_path + ":/project",
             "-w", "/project",
             self.sandbox_image,
         ]
