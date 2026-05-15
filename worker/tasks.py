@@ -331,6 +331,14 @@ def _run_engine(job_id: str, config: dict) -> dict:
 
 def _get_mutants(config: dict, job_id: str):
     upload_path = config.get("upload_path")
+    # Translate container path /app/uploads -> host path (same inside container)
+    # The bind mount makes ~/impt/uploads appear as /app/uploads inside the container
+    # so the path should work as-is inside the worker container
+    if upload_path and not Path(upload_path).exists():
+        # Try alternate path if running outside container
+        alt = upload_path.replace("/app/uploads", "/home/imptuser/impt/uploads")
+        if Path(alt).exists():
+            upload_path = alt
     if upload_path and Path(upload_path).exists():
         try:
             from adapters.pit_adapter     import PITAdapter

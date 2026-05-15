@@ -112,9 +112,20 @@ export function NewSessionUpload() {
   const [loading, setLoading]   = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [dragOver, setDragOver] = useState(false);
+  const [dragOver, setDragOver]   = useState(false);
+  const [uploadDone, setUploadDone] = useState(false);
 
-  useEffect(() => { getSession(id).then(setSession).catch(() => nav('/dashboard')); }, [id]);
+  useEffect(() => {
+    getSession(id).then(s => {
+      setSession(s);
+      if (s.upload_path && s.status !== 'not_started') setUploadDone(true);
+    }).catch(err => {
+      if (err?.response?.status === 404 || err?.response?.status === 403)
+        nav('/dashboard');
+      else
+        setError('Failed to load session. Please check your connection and try again.');
+    });
+  }, [id]);
 
   if (!session) return (
     <AppShell>
@@ -133,22 +144,23 @@ export function NewSessionUpload() {
 
   const handleUpload = async () => {
     if (!file) { setError('Please select a file to upload.'); return; }
-    setUploading(true); setError(''); setProgress(0);
+    setUploading(true); setError(''); setProgress(20);
     try {
       const fd = new FormData(); fd.append('file', file);
-      // Simulate progress
-      const interval = setInterval(() => setProgress(p => Math.min(p + 10, 90)), 200);
+      setProgress(50);
       const updated = await uploadProject(id, fd);
-      clearInterval(interval); setProgress(100);
+      setProgress(100);
       setSession(updated);
+      setUploadDone(true);
     } catch (err) {
+      setProgress(0);
       setError(err.response?.data?.detail || 'Upload failed. Please check your project structure.');
     } finally {
       setUploading(false);
     }
   };
 
-  const uploaded = session?.status && session.status !== 'not_started' && !!session?.upload_path;
+  const uploaded = uploadDone || (session?.status && session.status !== 'not_started' && !!session?.upload_path);
   const lang = session?.language || 'java';
 
   return (
@@ -255,7 +267,7 @@ export function NewSessionOperators() {
       if (s.selected_operators) {
         try { setSelected(new Set(JSON.parse(s.selected_operators))); } catch {}
       }
-    }).catch(() => nav('/dashboard'));
+    }).catch(err => { if(!err?.response?.status || err?.response?.status===404 || err?.response?.status===403) nav('/dashboard'); });
   }, [id]);
 
   if (!session) return <AppShell><div className="page-content" style={{textAlign:'center',paddingTop:60,color:'var(--gray-400)'}}>Loading…</div></AppShell>;
@@ -338,7 +350,9 @@ export function NewSessionBudget() {
   const nav    = useNavigate();
   const [session, setSession] = useState(null);
   const [budget, setBudgetVal] = useState(20);
-  const [runComparison, setRunComparison] = useState(true);
+  const [runComparison, setRunComparison]     = useState(true);
+  const [runOperatorBased, setRunOperatorBased] = useState(true);
+  const [lowBudgetConfirmed, setLowBudgetConfirmed] = useState(false);
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -348,7 +362,7 @@ export function NewSessionBudget() {
       if (s.time_budget_minutes) setBudgetVal(s.time_budget_minutes);
       if (s.run_comparison !== undefined)    setRunComparison(s.run_comparison);
       if (s.run_operator_based !== undefined) setRunOperatorBased(s.run_operator_based);
-    }).catch(() => nav('/dashboard'));
+    }).catch(err => { if(!err?.response?.status || err?.response?.status===404 || err?.response?.status===403) nav('/dashboard'); });
   }, [id]);
 
   if (!session) return <AppShell><div className="page-content" style={{textAlign:'center',paddingTop:60,color:'var(--gray-400)'}}>Loading…</div></AppShell>;
@@ -361,7 +375,7 @@ export function NewSessionBudget() {
   const handleNext = async () => {
     setLoading(true); setError('');
     try {
-      await setBudget(id, { time_budget_minutes: budget, run_comparison: runComparison });
+      await setBudget(id, { time_budget_minutes: budget, run_comparison: runComparison, run_operator_based: runOperatorBased });
       nav(`/sessions/${id}/review`);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to save budget.');
@@ -469,7 +483,7 @@ export function NewSessionReview() {
   const [loading, setLoading]   = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  useEffect(() => { getSession(id).then(setSession).catch(()=>nav('/dashboard')); },[id]);
+  useEffect(() => { getSession(id).then(setSession).catch(err => { if(!err?.response?.status || err?.response?.status===404 || err?.response?.status===403) nav('/dashboard'); }); },[id]);
 
   const ops = session?.selected_operators ? JSON.parse(session.selected_operators) : [];
 

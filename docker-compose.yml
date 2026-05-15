@@ -10,7 +10,7 @@ services:
     environment:
       PYTHONPATH: /app
     volumes:
-      - uploads:/app/uploads
+      - ${HOME}/impt/uploads:/app/uploads
       - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
@@ -31,8 +31,9 @@ services:
     environment:
       PYTHONPATH: /app
     volumes:
-      - uploads:/app/uploads
+      - ${HOME}/impt/uploads:/app/uploads
       - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker
 
   beat:
     build: .
@@ -45,5 +46,4 @@ services:
     environment:
       PYTHONPATH: /app
 
-volumes:
-  uploads:
+# uploads dir is a bind mount to ~/impt/uploads on the host
