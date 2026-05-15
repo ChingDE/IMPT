@@ -4,7 +4,7 @@ import logging
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from impt.models.mutant import (
     CodeLocation, Mutant, MutationOperator, PriorityFactors, ExecutionStatus
@@ -160,9 +160,23 @@ class PITAdapter:
                 original = m_elem.findtext("description", "original")
                 mutated  = f"[{mutator_class}] {original}"
 
+                # Stage 4 coverage proxy: use killingTest + mutatedMethod
+                # PIT doesn't expose full coverage sets, but killingTest +
+                # method name gives a useful approximation for Jaccard similarity
+                killing_test = m_elem.findtext("killingTest", "")
+                mutated_method = m_elem.findtext("mutatedMethod", "")
+                test_coverage: set = set()
+                if killing_test:
+                    test_coverage.add(killing_test)
+                if mutated_method:
+                    # Add method as a coverage proxy — mutants in the same method
+                    # are likely covered by the same tests
+                    test_coverage.add(f"method:{mutated_method}")
+
                 mutant = Mutant(
                     operator=operator, location=loc,
                     original_code=original, mutated_code=mutated,
+                    test_coverage=test_coverage,
                 )
                 mutant.status = status
                 mutants.append(mutant)
