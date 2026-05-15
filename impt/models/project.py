@@ -51,8 +51,19 @@ class Project:
     config:     ProjectConfig     = field(default_factory=ProjectConfig)
 
     def base_execution_time_per_loc(self) -> float:
-        # Conservative defaults — actual timing from cache overrides these in tasks.py
-        # PIT/Java: ~3ms per LOC (whole test suite per mutant)
-        # Stryker/JS: ~2ms per LOC (parallel test execution)
-        # Floor is enforced in ExecutionTimeEstimator to avoid 0-second estimates
+        # Estimate based on empirical data:
+        # seconds_per_mutant ≈ (test_count × avg_test_ms / 1000) / stryker_workers
+        # Stryker uses 4 workers by default; avg JS test ~50-100ms, Java ~200-500ms
+        # This gives ~0.5-2s per mutant for typical projects
+        # The actual measured time from a completed run overrides this in tasks.py
         return 0.003 if self.framework == MutationFramework.PIT else 0.002
+
+    def estimated_seconds_per_mutant(self) -> float:
+        """Estimate execution time per mutant based on test suite size."""
+        from impt.models.project import MutationFramework
+        if self.framework == MutationFramework.PIT:
+            # Java: whole test suite per mutant, ~200ms avg test
+            return max(1.0, (self.test_count * 0.2))
+        else:
+            # JS: parallel with 4 workers, ~80ms avg test
+            return max(0.5, (self.test_count * 0.08) / 4)
