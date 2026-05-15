@@ -54,11 +54,33 @@ class StrykerAdapter:
                  sandbox_image: str = "impt-sandbox:latest",
                  time_budget_seconds: int = 0,
                  selected_mutants: Optional[List[Mutant]] = None):
-        self.project_dir         = project_dir
         self.use_docker          = use_docker
         self.sandbox_image       = sandbox_image
         self.time_budget_seconds = time_budget_seconds
         self.selected_mutants    = selected_mutants
+
+        # If the project directory is read-only (e.g. FOSS projects mounted :ro),
+        # copy it to a writable working directory so npm install and lock files work.
+        self.project_dir = self._ensure_writable(Path(project_dir))
+
+    @staticmethod
+    def _ensure_writable(project_dir: Path) -> Path:
+        """Return a writable copy of project_dir if it's read-only."""
+        import os, shutil
+        try:
+            test_file = project_dir / ".write_test"
+            test_file.touch()
+            test_file.unlink()
+            return project_dir  # already writable
+        except (OSError, PermissionError):
+            # Read-only — copy to /tmp/impt-foss/<dirname>
+            work_dir = Path("/tmp/impt-foss") / project_dir.name
+            if not work_dir.exists():
+                log.info("Copying read-only FOSS project to writable workdir: %s", work_dir)
+                shutil.copytree(str(project_dir), str(work_dir), symlinks=False)
+            else:
+                log.info("Using existing writable workdir: %s", work_dir)
+            return work_dir
 
     def run(self) -> List[Mutant]:
         """
