@@ -398,6 +398,8 @@ async def set_budget(
     updated = await repo.update(
         session,
         time_budget_minutes=payload.time_budget_minutes,
+        selected_strategy=payload.selected_strategy,
+        run_exhaustive=payload.run_exhaustive,
         run_comparison=payload.run_comparison,
         run_operator_based=payload.run_operator_based,
         status="ready",
@@ -432,88 +434,72 @@ async def start_testing(
         raise HTTPException(status_code=400, detail="Please set a time budget first.")
 
     from db.repositories.repositories import JobRepository
-    from db.database import AsyncSessionLocal
     job_repo = JobRepository(db)
 
-    operators = json.loads(session.selected_operators or "[]")
+    operators      = json.loads(session.selected_operators or "[]")
     budget_seconds = (session.time_budget_minutes or 20) * 60
+    strategy       = getattr(session, "selected_strategy", "impt") or "impt"
+    run_exhaustive = getattr(session, "run_exhaustive", False)
 
-    # Always create the IMPT intelligent job
-    impt_job = await job_repo.create(
+    optimizer_map = {"impt": "AUTO", "random": "GREEDY", "operator_based": "GREEDY"}
+
+    # Primary strategy job
+    primary_job = await job_repo.create(
         session_id=session_id,
         owner_id=current_user.id,
-        strategy="impt",
+        strategy=strategy,
         time_budget_seconds=budget_seconds,
-        optimizer_strategy="AUTO",
+        optimizer_strategy=optimizer_map.get(strategy, "AUTO"),
         jaccard_threshold=0.90,
         selected_operators=session.selected_operators,
     )
 
-    # FR093: Optionally create comparison jobs (Random Sampling + Operator-Based)
-    comparison_jobs = []
-    if session.run_comparison:
-        random_job = await job_repo.create(
+    # Optional exhaustive job — no knapsack, no time cap
+    exhaustive_job = None
+    if run_exhaustive:
+        exhaustive_job = await job_repo.create(
             session_id=session_id,
             owner_id=current_user.id,
-            strategy="random",
-            time_budget_seconds=budget_seconds,
-            optimizer_strategy="GREEDY",
+            strategy="exhaustive",
+            time_budget_seconds=86400,
+            optimizer_strategy="NONE",
+            jaccard_threshold=0.90,
             selected_operators=session.selected_operators,
         )
-        comparison_jobs.append(random_job)
-
-    if getattr(session, "run_operator_based", True):
-        operator_job = await job_repo.create(
-            session_id=session_id,
-            owner_id=current_user.id,
-            strategy="operator_based",
-            time_budget_seconds=budget_seconds,
-            optimizer_strategy="GREEDY",
-            selected_operators=session.selected_operators,
-        )
-        comparison_jobs.append(operator_job)
 
     await repo.update(session, status="running", started_at=datetime.utcnow())
 
     await audit_repo.log(
         category="TESTING", action="session_started",
-        message=f"Testing started: {session.name}",
+        message=f"Testing started: {session.name} | strategy={strategy} | exhaustive={run_exhaustive}",
         user_id=current_user.id, ip_address=_ip(request),
     )
     await db.commit()
 
-    # Dispatch jobs asynchronously
     config = {
-        "session_id": session_id,
-        "language": session.language,
-        "upload_path": session.upload_path,
-        "loc": session.loc or 5000,
-        "test_count": session.test_count or 100,
+        "session_id":         session_id,
+        "language":           session.language,
+        "upload_path":        session.upload_path,
+        "foss_project_id":    getattr(session, "foss_project_id", None),
+        "loc":                session.loc or 5000,
+        "test_count":         session.test_count or 100,
         "selected_operators": operators,
-        "use_docker": True,
+        "use_docker":         True,
     }
 
     from worker.celery_app import CELERY_AVAILABLE
 
-    all_jobs = [impt_job] + comparison_jobs
+    all_jobs = [primary_job] + ([exhaustive_job] if exhaustive_job else [])
     job_ids  = [j.id for j in all_jobs]
-
-    # Store job IDs on the session for frontend polling
-    await repo.update(session, selected_operators=json.dumps({
-        "job_ids": job_ids,
-        "operators": operators,
-    }) if False else session.selected_operators)  # no-op, job_ids returned below
 
     for i, job in enumerate(all_jobs):
         job_config = {
             **config,
-            "time_budget_seconds":  job.time_budget_seconds,
-            "optimizer_strategy":   job.optimizer_strategy,
-            "strategy":             job.strategy,
+            "time_budget_seconds": job.time_budget_seconds,
+            "optimizer_strategy":  job.optimizer_strategy,
+            "strategy":            job.strategy,
         }
-        # Stagger comparison jobs by 90 seconds so npm install finishes
-        # before the next job tries to access the same upload directory
-        countdown = i * 90  # IMPT=0s, Random=90s, Operator-Based=180s
+        countdown  = i * 90
         dispatched = False
         if CELERY_AVAILABLE:
             from worker.tasks import run_mutation_job
@@ -525,7 +511,7 @@ async def start_testing(
                 await job_repo.mark_running(job.id, task.id)
                 await db.commit()
                 dispatched = True
-                log.info("Job %s dispatched to Celery (countdown=%ds)", job.id, countdown)
+                log.info("Job %s (%s) dispatched (countdown=%ds)", job.id, job.strategy, countdown)
             except Exception as exc:
                 log.warning("Celery dispatch failed, using thread: %s", exc)
 
@@ -538,7 +524,7 @@ async def start_testing(
                 daemon=True,
             )
             t.start()
-            log.info("Job %s dispatched to background thread", job.id)
+            log.info("Job %s (%s) dispatched to thread", job.id, job.strategy)
 
     return {"session_id": session_id, "jobs": job_ids}
 
