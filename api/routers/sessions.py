@@ -357,10 +357,11 @@ async def configure_operators(
     session = await repo.get_by_id(session_id)
     if not session or session.owner_id != current_user.id:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.status not in ("uploaded", "configured", "ready", "running", "completed", "failed"):
+    # FOSS sessions skip upload so status stays 'not_started' — allow that too
+    if session.status not in ("not_started", "uploaded", "configured", "ready", "running", "completed", "failed"):
         raise HTTPException(status_code=400, detail="Project must be uploaded before configuring operators.")
-    if not session.upload_path:
-        raise HTTPException(status_code=400, detail="Project must be uploaded before configuring operators.")
+    if not session.upload_path and not getattr(session, "foss_project_id", None):
+        raise HTTPException(status_code=400, detail="Project must be uploaded or a FOSS project selected before configuring operators.")
     if not payload.selected_operators:
         raise HTTPException(status_code=422, detail="At least one mutation operator must be selected.")
 
@@ -423,8 +424,8 @@ async def start_testing(
         raise HTTPException(status_code=404, detail="Session not found")
     if session.status not in ("ready", "configured"):
         raise HTTPException(status_code=400, detail="Session is not ready to start. Complete all configuration steps first.")
-    if not session.upload_path:
-        raise HTTPException(status_code=400, detail="Please upload your project first.")
+    if not session.upload_path and not getattr(session, "foss_project_id", None):
+        raise HTTPException(status_code=400, detail="Please upload your project or select a FOSS project first.")
     if not session.selected_operators:
         raise HTTPException(status_code=400, detail="Please configure mutation operators first.")
     if not session.time_budget_minutes:
@@ -483,6 +484,18 @@ async def start_testing(
         "selected_operators": operators,
         "use_docker":         True,
     }
+
+    # Resolve FOSS project slug for path lookup in worker
+    foss_project_id = getattr(session, "foss_project_id", None)
+    if foss_project_id:
+        from sqlalchemy import select as _select
+        from db.models.orm_models import FossProject
+        fp_result = await db.execute(_select(FossProject).where(FossProject.id == foss_project_id))
+        fp = fp_result.scalar_one_or_none()
+        if fp:
+            config["foss_slug"] = fp.slug
+            config["loc"]       = fp.loc
+            config["test_count"] = fp.test_count or 100
 
     from worker.celery_app import CELERY_AVAILABLE
 
