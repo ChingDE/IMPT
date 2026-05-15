@@ -266,6 +266,7 @@ def _run_engine(job_id: str, config: dict) -> dict:
     if is_exhaustive:
         # Exhaustive: skip scoring, subsumption, and knapsack — run every mutant
         selected = list(all_mutants)
+        reduced  = all_mutants  # no subsumption reduction
         log.info("Job %s: EXHAUSTIVE — running all %d mutants", job_id, len(selected))
     else:
         # Score the population
