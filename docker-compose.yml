@@ -16,6 +16,7 @@ services:
       - ${HOME}/impt/uploads:/app/uploads
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker
+      - ./foss:/app/foss:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
@@ -43,6 +44,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker
       - impt-maven-cache:/root/.m2
+      - ./foss:/app/foss:ro
 
   beat:
     build: .
