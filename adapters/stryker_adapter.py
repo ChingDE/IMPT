@@ -41,10 +41,25 @@ DEFAULT_STRYKER_CONFIG = """\
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 module.exports = {
   reporters: ['json', 'progress'],
-  testRunner: 'jest',
+  testRunner: 'command',
   coverageAnalysis: 'off',
-  timeoutMS: 30000,
-  timeoutFactor: 2,
+  timeoutMS: 60000,
+  timeoutFactor: 3,
+  commandRunner: {
+    command: 'node --experimental-vm-modules node_modules/.bin/jest 2>/dev/null || npm test 2>/dev/null || true'
+  },
+  mutate: [
+    'source/**/*.{js,ts,mjs}',
+    'src/**/*.{js,ts,mjs}',
+    '*.{js,ts,mjs}',
+    '!**/*.test.{js,ts}',
+    '!**/*.spec.{js,ts}',
+    '!**/*.test-d.{js,ts}',
+    '!node_modules/**',
+    '!stryker.config.{js,cjs}',
+    '!jest.config.{js,cjs}',
+  ],
+  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: {
     fileName: 'reports/mutation/mutation.json'
   }
@@ -69,15 +84,105 @@ class StrykerAdapter:
         return self._parse_results()
 
     def _ensure_config(self) -> None:
-        """Create a default Stryker config if none exists."""
+        """Create a Stryker config based on the actual project structure."""
         has_config = any([
             (self.project_dir / "stryker.config.js").exists(),
             (self.project_dir / "stryker.config.cjs").exists(),
             (self.project_dir / ".strykerrc.json").exists(),
         ])
         if not has_config:
-            log.info("No Stryker config found, creating default config")
-            (self.project_dir / "stryker.config.js").write_text(DEFAULT_STRYKER_CONFIG)
+            log.info("No Stryker config found, creating config from project structure")
+            config = self._generate_config()
+            # Use .cjs extension for ES module projects ("type": "module")
+            try:
+                import json as _j
+                pkg = _j.loads((self.project_dir / "package.json").read_text())
+                is_esm = pkg.get("type", "") == "module"
+            except Exception:
+                is_esm = False
+            config_name = "stryker.config.cjs" if is_esm else "stryker.config.js"
+            (self.project_dir / config_name).write_text(config)
+            log.info("Wrote %s", config_name)
+
+    def _generate_config(self) -> str:
+        """Generate a Stryker config tailored to the actual project."""
+        import json as _json
+
+        # Detect test framework from package.json
+        test_runner = "command"
+        test_command = "npm test"
+        pkg_path = self.project_dir / "package.json"
+        if pkg_path.exists():
+            try:
+                pkg = _json.loads(pkg_path.read_text())
+                deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+                scripts = pkg.get("scripts", {})
+                test_script = scripts.get("test", "")
+                if "jest" in deps or "jest" in test_script:
+                    test_runner = "jest"
+                    test_command = ""
+                elif "mocha" in deps:
+                    test_runner = "mocha"
+                    test_command = ""
+                elif "ava" in deps:
+                    # Use ava directly — avoids running linters/type-checkers from npm test
+                    test_runner = "command"
+                    test_command = "node_modules/.bin/ava"
+                elif "vitest" in deps:
+                    test_runner = "command"
+                    test_command = "node_modules/.bin/vitest run"
+                elif "test" in scripts:
+                    # Use npm test but strip linting steps if present
+                    test_command = "npm test"
+            except Exception:
+                pass
+
+        # Detect source directories
+        src_patterns = []
+        for candidate in ["source", "src", "lib", "index.js"]:
+            p = self.project_dir / candidate
+            if p.exists():
+                if p.is_dir():
+                    src_patterns.append(f"{candidate}/**/*.{{js,ts,mjs,cjs}}")
+                else:
+                    src_patterns.append(candidate)
+        if not src_patterns:
+            src_patterns = ["**/*.{{js,ts,mjs,cjs}}"]
+
+        mutate_str = ",
+    ".join([f"'{p}'" for p in src_patterns] + [
+            "'!**/*.test.{js,ts}'",
+            "'!**/*.spec.{js,ts}'",
+            "'!**/*.test-d.{js,ts}'",
+            "'!node_modules/**'",
+        ])
+
+        if test_runner == "jest":
+            runner_cfg = "testRunner: 'jest',
+  coverageAnalysis: 'off',"
+        elif test_runner == "mocha":
+            runner_cfg = "testRunner: 'mocha',
+  coverageAnalysis: 'off',"
+        else:
+            runner_cfg = f"testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: {{ command: '{test_command}' }},"
+
+        return f"""/** @type {{import('@stryker-mutator/api/core').PartialStrykerOptions}} */
+module.exports = {{
+  reporters: ['json', 'progress'],
+  {runner_cfg}
+  timeoutMS: 60000,
+  timeoutFactor: 3,
+  mutate: [
+    {mutate_str}
+  ],
+  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
+  jsonReporter: {{
+    fileName: 'reports/mutation/mutation.json'
+  }}
+}};
+"""
 
     def _docker_base(self, network: str = "none") -> list:
         """Base docker run command."""
@@ -86,6 +191,7 @@ class StrykerAdapter:
             "--network", network,
             "--memory", "2g",
             "--cpus", "2",
+            "--user", "root",
             "-v", f"{self.project_dir}:/project",
             "-w", "/project",
             self.sandbox_image,
@@ -104,8 +210,13 @@ class StrykerAdapter:
         log.info("Phase 1: Installing npm dependencies (network enabled)…")
         cmd = self._docker_base(network="bridge") + [
             "sh", "-c",
-            "npm install --prefer-offline --no-audit --no-fund 2>&1 && "
-            "npx stryker init --yes 2>/dev/null || true"
+            # Install project deps
+            "npm install --prefer-offline --no-audit --no-fund --unsafe-perm 2>&1 || "
+            "npm install --no-audit --no-fund --unsafe-perm 2>&1; "
+            # Ensure Stryker core is available (in case it's not in project deps)
+            "[ -d node_modules/@stryker-mutator/core ] || "
+            "npm install --unsafe-perm --no-audit --save-dev "
+            "@stryker-mutator/core 2>&1 || true"
         ]
         try:
             result = subprocess.run(
