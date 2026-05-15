@@ -617,8 +617,16 @@ def _save_exhaustive_baseline(foss_project_id: str, result: dict) -> None:
         else:
             # PostgreSQL — use psycopg2 directly (sync context)
             import psycopg2
-            conn = psycopg2.connect(db_url.replace("postgresql+asyncpg", "postgresql")
-                                          .replace("postgresql+psycopg2", "postgresql"))
+            from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
+            raw_url = db_url.replace("postgresql+asyncpg", "postgresql") \
+                            .replace("postgresql+psycopg2", "postgresql")
+            parsed = urlparse(raw_url)
+            qs = parse_qs(parsed.query)
+            ssl_val = qs.pop("ssl", [None])[0]
+            clean_url = urlunparse(parsed._replace(query=urlencode({k: v[0] for k, v in qs.items()})))
+            # Pass ssl as sslmode kwarg (psycopg2 syntax)
+            ssl_kwargs = {"sslmode": ssl_val} if ssl_val else {}
+            conn = psycopg2.connect(clean_url, **ssl_kwargs)
             cur  = conn.cursor()
             cur.execute("""
                 INSERT INTO exhaustive_baselines

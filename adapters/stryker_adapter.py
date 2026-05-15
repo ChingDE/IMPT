@@ -190,11 +190,12 @@ class StrykerAdapter:
             log.info("Using existing session report: %s", report)
             return self._parse_results()
 
-        # Run --incremental --dryRunOnly: enumerates all mutants in ~3 seconds
+        # Run --dryRunOnly: enumerates all mutants in ~3 seconds
         # No tests are executed — mutants get status Survived (placeholder)
         # IMPT scores them on static factors and selects within budget
-        log.info("Phase 1: Enumerating mutants via --incremental --dryRunOnly (~3s)...")
-        self._run_stryker_docker(extra_flags="--incremental --dryRunOnly")
+        # Note: --incremental is NOT used here because it suppresses the JSON report
+        log.info("Phase 1: Enumerating mutants via --dryRunOnly (~3s)...")
+        self._run_stryker_docker(extra_flags="--dryRunOnly")
         mutants = self._parse_results()
         log.info("Phase 1 complete: %d mutants enumerated in ~3 seconds", len(mutants))
         return mutants
