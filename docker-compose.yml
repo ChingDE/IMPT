@@ -9,6 +9,7 @@ services:
     env_file: .env
     environment:
       PYTHONPATH: /app
+    user: "1001:1001"
     group_add:
       - ${DOCKER_GID:-999}
     volumes:
@@ -21,7 +22,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 25s
-    user: "1001:1001"
 
   worker:
     build: .
@@ -34,6 +34,7 @@ services:
     env_file: .env
     environment:
       PYTHONPATH: /app
+    user: "1001:1001"
     group_add:
       - ${DOCKER_GID:-999}
     volumes:
