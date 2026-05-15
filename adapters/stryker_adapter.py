@@ -466,15 +466,22 @@ class StrykerAdapter:
     # ── Report parsing ────────────────────────────────────────────────────────
 
     def _find_report(self):
-        for p in [
-            self.project_dir / "reports" / "mutation" / "mutation.json",
-            self.project_dir / "reports" / "mutation.json",
-            self.project_dir / ".stryker-tmp" / "mutation.json",
-        ]:
-            if p.exists():
+        # Check both container path and host-translated path
+        dirs_to_check = [self.project_dir]
+        host_path = Path(self._host_project_dir())
+        if host_path != self.project_dir:
+            dirs_to_check.append(host_path)
+
+        for base in dirs_to_check:
+            for p in [
+                base / "reports" / "mutation" / "mutation.json",
+                base / "reports" / "mutation.json",
+                base / ".stryker-tmp" / "mutation.json",
+            ]:
+                if p.exists():
+                    return p
+            for p in base.rglob("mutation.json"):
                 return p
-        for p in self.project_dir.rglob("mutation.json"):
-            return p
         return None
 
     def _parse_results(self) -> List[Mutant]:
