@@ -205,3 +205,94 @@ def test_killing_test_populates_coverage():
         assert "method:multiply" in survived.test_coverage
         assert len([t for t in survived.test_coverage
                     if not t.startswith("method:")]) == 0
+
+
+def test_non_viable_maps_to_equivalent():
+    """NON_VIABLE (produced by detectInlinedCode/FANN/FINULL) → EQUIVALENT."""
+    xml = textwrap.dedent("""\
+        <?xml version="1.0" encoding="UTF-8"?>
+        <mutations>
+          <mutation detected="false" status="NON_VIABLE">
+            <sourceFile>Calculator.java</sourceFile>
+            <mutatedClass>com.example.Calculator</mutatedClass>
+            <mutatedMethod>add</mutatedMethod>
+            <lineNumber>10</lineNumber>
+            <mutator>org.pitest.mutationtest.engine.gregor.mutators.ArithmeticOperatorReplacementMutator</mutator>
+            <description>Replaced integer addition with subtraction</description>
+          </mutation>
+          <mutation detected="true" status="KILLED">
+            <sourceFile>Calculator.java</sourceFile>
+            <mutatedClass>com.example.Calculator</mutatedClass>
+            <mutatedMethod>multiply</mutatedMethod>
+            <lineNumber>20</lineNumber>
+            <mutator>org.pitest.mutationtest.engine.gregor.mutators.NegateConditionalsMutator</mutator>
+            <description>Negated conditional</description>
+          </mutation>
+        </mutations>
+    """)
+    with tempfile.TemporaryDirectory() as tmp:
+        report_dir = Path(tmp) / "target" / "pit-reports"
+        report_dir.mkdir(parents=True)
+        (report_dir / "mutations.xml").write_text(xml)
+        adapter = PITAdapter(Path(tmp), use_docker=False)
+        mutants = adapter._parse_results()
+
+    equiv = [m for m in mutants if m.status == ExecutionStatus.EQUIVALENT]
+    killed = [m for m in mutants if m.status == ExecutionStatus.KILLED]
+    assert len(equiv) == 1,  f"expected 1 EQUIVALENT, got {len(equiv)}"
+    assert len(killed) == 1, f"expected 1 KILLED, got {len(killed)}"
+
+
+def test_non_viable_excluded_from_score():
+    """EQUIVALENT mutants must not count toward mutation score denominator."""
+    xml = textwrap.dedent("""\
+        <?xml version="1.0" encoding="UTF-8"?>
+        <mutations>
+          <mutation detected="false" status="NON_VIABLE">
+            <sourceFile>A.java</sourceFile><mutatedClass>A</mutatedClass>
+            <mutatedMethod>m</mutatedMethod><lineNumber>1</lineNumber>
+            <mutator>org.pitest.mutationtest.engine.gregor.mutators.ArithmeticOperatorReplacementMutator</mutator>
+            <description>desc</description>
+          </mutation>
+          <mutation detected="false" status="SURVIVED">
+            <sourceFile>A.java</sourceFile><mutatedClass>A</mutatedClass>
+            <mutatedMethod>m</mutatedMethod><lineNumber>2</lineNumber>
+            <mutator>org.pitest.mutationtest.engine.gregor.mutators.ArithmeticOperatorReplacementMutator</mutator>
+            <description>desc</description>
+          </mutation>
+        </mutations>
+    """)
+    with tempfile.TemporaryDirectory() as tmp:
+        report_dir = Path(tmp) / "target" / "pit-reports"
+        report_dir.mkdir(parents=True)
+        (report_dir / "mutations.xml").write_text(xml)
+        adapter = PITAdapter(Path(tmp), use_docker=False)
+        mutants = adapter._parse_results()
+
+    scoreable = [m for m in mutants if m.counts_in_score]
+    assert len(scoreable) == 1, "only SURVIVED should count; EQUIVALENT must be excluded"
+
+
+def test_pit_docker_cmd_has_equivalent_detection_flags():
+    """_run_docker command must include detectInlinedCode and FANN/FINULL flags."""
+    import unittest.mock as mock
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "pom.xml").write_text("<project/>")
+        adapter = PITAdapter(Path(tmp), use_docker=True)
+        # Intercept subprocess.run — we only want to inspect the command, not run it
+        with mock.patch("adapters.pit_adapter.subprocess.run") as mock_run:
+            mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
+            # Patch _find_report so it doesn't fail after the mock
+            with mock.patch.object(adapter, "_find_report", return_value=None):
+                try:
+                    adapter._run_docker()
+                except Exception:
+                    pass  # expected — no real report
+        calls = mock_run.call_args_list
+        # Find the mutation coverage call (Phase 2)
+        pit_calls = [c for c in calls if any("mutationCoverage" in str(a) for a in c[0])]
+        assert pit_calls, "no mutationCoverage call found"
+        cmd_str = " ".join(str(a) for a in pit_calls[-1][0][0])
+        assert "detectInlinedCode=true" in cmd_str, "missing -DdetectInlinedCode=true"
+        assert "FANN" in cmd_str, "missing +FANN feature flag"
+        assert "FINULL" in cmd_str, "missing +FINULL feature flag"

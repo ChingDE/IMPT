@@ -36,6 +36,9 @@ STATUS_MAP = {
     "KILLED":     ExecutionStatus.KILLED,
     "SURVIVED":   ExecutionStatus.SURVIVED,
     "NO_COVERAGE": ExecutionStatus.SURVIVED,
+    # Tier 1 equivalent detection: PIT marks inlined/trivial mutants NON_VIABLE
+    # when detectInlinedCode=true and FANN/FINULL features are enabled.
+    "NON_VIABLE": ExecutionStatus.EQUIVALENT,
     "TIMED_OUT":  ExecutionStatus.TIMEOUT,
     "MEMORY_ERROR": ExecutionStatus.ERROR,
     "RUN_ERROR":  ExecutionStatus.ERROR,
@@ -97,6 +100,12 @@ class PITAdapter:
             "-DoutputFormats=XML",
             "-DmutationThreshold=0",
             "-DfailWhenNoMutations=false",
+            # Tier 1 equivalent mutant detection (manuscript Section 3.5.x):
+            # detectInlinedCode — marks compiler-inlined mutations NON_VIABLE
+            # +FANN (Fast Approximate Non-Null) — detects null-check equivalents
+            # +FINULL (Fast Incremental Null) — detects null-dereference equivalents
+            "-DdetectInlinedCode=true",
+            "-DfeaturesOverride=+FANN,+FINULL",
             "--batch-mode",
         ]
         try:
@@ -116,7 +125,9 @@ class PITAdapter:
         if (self.project_dir / "pom.xml").exists():
             cmd = ["mvn", "org.pitest:pitest-maven:mutationCoverage",
                    "-DtimestampedReports=false", "-DoutputFormats=XML",
-                   "-DmutationThreshold=0", "-DfailWhenNoMutations=false", "--batch-mode"]
+                   "-DmutationThreshold=0", "-DfailWhenNoMutations=false",
+                   "-DdetectInlinedCode=true", "-DfeaturesOverride=+FANN,+FINULL",
+                   "--batch-mode"]
         else:
             cmd = ["./gradlew", "pitest"]
         subprocess.run(cmd, cwd=self.project_dir, check=True, timeout=3600)

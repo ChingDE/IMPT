@@ -288,6 +288,10 @@ class StrykerAdapter:
             "  mutate: [",
             "    " + mutate_str,
             "  ],",
+            # Tier 1 equivalent mutant detection (manuscript Section 3.5.x):
+            # 'static'  — ignores mutants in static initializers (unreachable by tests)
+            # 'trivial' — ignores algebraic no-ops: x*1, x+0, x||false, x&&true, etc.
+            "  ignorers: ['static', 'trivial'],",
             "  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],",
             "  jsonReporter: {",
             "    fileName: 'reports/mutation/mutation.json'",

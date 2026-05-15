@@ -225,3 +225,96 @@ def test_missing_covered_by_gives_empty_coverage():
         mutants = adapter._parse_results()
         # SAMPLE_V6 has no coveredBy — all should have empty coverage
         assert all(m.test_coverage == set() for m in mutants)
+
+
+def test_ignored_status_maps_to_equivalent():
+    """Stryker 'Ignored' status (from ignorers: static/trivial) → EQUIVALENT."""
+    report = {
+        "schemaVersion": "1",
+        "files": {
+            "src/utils.js": {
+                "language": "javascript",
+                "mutants": [
+                    {
+                        "id": "10",
+                        "mutatorName": "ArithmeticOperator",
+                        "replacement": "a + 0",
+                        "status": "Ignored",   # trivial ignorer fires
+                        "location": {"start": {"line": 3, "column": 5},
+                                     "end":   {"line": 3, "column": 10}},
+                    },
+                    {
+                        "id": "11",
+                        "mutatorName": "EqualityOperator",
+                        "replacement": "x !== y",
+                        "status": "Killed",
+                        "location": {"start": {"line": 7, "column": 4},
+                                     "end":   {"line": 7, "column": 9}},
+                    },
+                ],
+            }
+        },
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        rdir = Path(tmp) / "reports" / "mutation"
+        rdir.mkdir(parents=True)
+        (rdir / "mutation.json").write_text(json.dumps(report))
+        adapter = StrykerAdapter(Path(tmp))
+        mutants = adapter._parse_results()
+
+    equiv = [m for m in mutants if m.status == ExecutionStatus.EQUIVALENT]
+    killed = [m for m in mutants if m.status == ExecutionStatus.KILLED]
+    assert len(equiv) == 1,  f"expected 1 EQUIVALENT, got {len(equiv)}"
+    assert len(killed) == 1, f"expected 1 KILLED, got {len(killed)}"
+
+
+def test_ignored_excluded_from_score():
+    """EQUIVALENT mutants from Stryker Ignored must not count in score."""
+    report = {
+        "schemaVersion": "1",
+        "files": {
+            "src/a.js": {
+                "language": "javascript",
+                "mutants": [
+                    {"id": "1", "mutatorName": "ArithmeticOperator", "replacement": "x",
+                     "status": "Ignored",
+                     "location": {"start": {"line": 1, "column": 1},
+                                  "end":   {"line": 1, "column": 2}}},
+                    {"id": "2", "mutatorName": "ArithmeticOperator", "replacement": "y",
+                     "status": "Survived",
+                     "location": {"start": {"line": 2, "column": 1},
+                                  "end":   {"line": 2, "column": 2}}},
+                ],
+            }
+        },
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        rdir = Path(tmp) / "reports" / "mutation"
+        rdir.mkdir(parents=True)
+        (rdir / "mutation.json").write_text(json.dumps(report))
+        adapter = StrykerAdapter(Path(tmp))
+        mutants = adapter._parse_results()
+
+    scoreable = [m for m in mutants if m.counts_in_score]
+    assert len(scoreable) == 1, "only SURVIVED should count; Ignored (EQUIVALENT) must be excluded"
+
+
+def test_build_config_contains_ignorers():
+    """Generated stryker.config.js must include ignorers: ['static', 'trivial']."""
+    with tempfile.TemporaryDirectory() as tmp:
+        pkg = Path(tmp) / "package.json"
+        pkg.write_text('{"name":"test","scripts":{"test":"jest"}}')
+        (Path(tmp) / "src").mkdir()
+        adapter = StrykerAdapter(Path(tmp))
+        adapter._ensure_config()
+        # Find whichever config file was written
+        cfg = None
+        for name in ["stryker.config.js", "stryker.config.cjs"]:
+            p = Path(tmp) / name
+            if p.exists():
+                cfg = p.read_text()
+                break
+        assert cfg is not None, "no stryker config file found"
+        assert "ignorers" in cfg,   "ignorers key missing from config"
+        assert "static"  in cfg,    "'static' ignorer missing from config"
+        assert "trivial" in cfg,    "'trivial' ignorer missing from config"
