@@ -58,12 +58,3 @@ class Project:
         # The actual measured time from a completed run overrides this in tasks.py
         return 0.003 if self.framework == MutationFramework.PIT else 0.002
 
-    def estimated_seconds_per_mutant(self) -> float:
-        """Estimate execution time per mutant based on test suite size."""
-        from impt.models.project import MutationFramework
-        if self.framework == MutationFramework.PIT:
-            # Java: whole test suite per mutant, ~200ms avg test
-            return max(1.0, (self.test_count * 0.2))
-        else:
-            # JS: parallel with 4 workers, ~80ms avg test
-            return max(0.5, (self.test_count * 0.08) / 4)

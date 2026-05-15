@@ -250,8 +250,11 @@ def _run_engine(job_id: str, config: dict) -> dict:
     )
 
     # ── Phase 1: Get all mutants ──────────────────────────────────────────────
-    all_mutants, upload_path = _get_all_mutants(config, job_id)
+    all_mutants, upload_path, actual_loc, actual_test_count = _get_all_mutants(config, job_id)
     log.info("Job %s: %d total mutants", job_id, len(all_mutants))
+    # Update project with real measured LOC and test count for Algorithm 5
+    project.loc        = actual_loc
+    project.test_count = actual_test_count
 
     # Write initial total so UI shows "X of Y" immediately
     _write_progress_sync(job_id, 0, 0, len(all_mutants), 0)
@@ -425,9 +428,9 @@ def _resolve_upload_path(upload_path: str) -> str:
 def _get_all_mutants(config: dict, job_id: str):
     """
     Phase 1: Get ALL mutants from the project.
-    For JS: runs Stryker fully (exhaustive baseline, cached).
+    For JS: runs Stryker --dryRunOnly --coverageAnalysis perTest (~3s).
     For Java: runs PIT fully.
-    Returns all mutants with PENDING status for IMPT to score/select.
+    Returns (mutants, upload_path, loc, test_count).
     """
     upload_path = _resolve_upload_path(config.get("upload_path", ""))
     if upload_path and Path(upload_path).exists():
@@ -439,28 +442,25 @@ def _get_all_mutants(config: dict, job_id: str):
             p    = Path(upload_path)
             lang = config.get("language", "java").lower()
             if lang == "java":
-                adapter = PITAdapter(p, use_docker=True)
-                mutants = adapter.run()
+                adapter    = PITAdapter(p, use_docker=True)
+                mutants    = adapter.run()
+                loc        = adapter.count_loc()
+                test_count = adapter.count_tests()
             else:
-                adapter = StrykerAdapter(p, use_docker=True)
-                mutants = adapter.enumerate()
+                adapter    = StrykerAdapter(p, use_docker=True)
+                mutants    = adapter.enumerate()
+                loc        = adapter.count_loc()
+                test_count = adapter.count_tests()
             FactorEnricher(p).enrich(mutants)
-
-            # Calibrate execution time per mutant from project characteristics
-            # This drives the knapsack optimizer budget allocation
-            spm = project.estimated_seconds_per_mutant()
-            log.info("Estimated %.2fs per mutant (test_count=%d)",
-                     spm, project.test_count)
             for m in mutants:
                 m.status = ExecutionStatus.PENDING
-                m.execution_time = spm  # uniform estimate before actual run
-
-            log.info("Phase 1: %d mutants enumerated from %s", len(mutants), upload_path)
-            return mutants, upload_path
+            log.info("Phase 1: %d mutants enumerated (LOC=%d, tests=%d) from %s",
+                     len(mutants), loc, test_count, upload_path)
+            return mutants, upload_path, loc, test_count
         except Exception as e:
             log.error("Adapter failed, using synthetic fallback: %s", e)
     log.info("Using synthetic population for job %s", job_id)
-    return _synthetic_population(config.get("loc", 5000), seed=hash(job_id)), None
+    return _synthetic_population(config.get("loc", 5000), seed=hash(job_id)), None, 5000, 100
 
 
 def _run_selected_mutants(selected, upload_path: str, config: dict) -> None:

@@ -268,13 +268,13 @@ class StrykerAdapter:
         mutate_str = (",\n    ").join(entries)
 
         if test_runner == "jest":
-            runner = "  testRunner: 'jest',\n  coverageAnalysis: 'off',"
+            runner = "  testRunner: 'jest',\n  coverageAnalysis: 'perTest',"
         elif test_runner == "mocha":
-            runner = "  testRunner: 'mocha',\n  coverageAnalysis: 'off',"
+            runner = "  testRunner: 'mocha',\n  coverageAnalysis: 'perTest',"
         else:
             runner = (
                 "  testRunner: 'command',\n"
-                "  coverageAnalysis: 'off',\n"
+                "  coverageAnalysis: 'perTest',\n"
                 "  commandRunner: { command: '" + test_command + "' },"
             )
 
@@ -590,6 +590,9 @@ class StrykerAdapter:
                                           MutationOperator.AOR)
                 loc    = rm.get("location", {})
                 start  = loc.get("start", {})
+                # Stage 4: coveredBy is populated when coverageAnalysis='perTest'
+                covered_by    = rm.get("coveredBy") or []
+                test_coverage = set(str(t) for t in covered_by) if covered_by else set()
                 m = Mutant(
                     operator=op,
                     location=CodeLocation(
@@ -599,6 +602,7 @@ class StrykerAdapter:
                     ),
                     original_code=rm.get("replacement", "original"),
                     mutated_code =rm.get("replacement", rm.get("mutatorName", "")),
+                    test_coverage=test_coverage,
                 )
                 m.status = status
                 mutants.append(m)
