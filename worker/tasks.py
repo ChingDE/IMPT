@@ -225,6 +225,7 @@ def _run_engine(job_id: str, config: dict) -> dict:
         "GREEDY": SelectionStrategy.GREEDY,
     }
     strat = strat_map.get(config.get("optimizer_strategy", "AUTO"), SelectionStrategy.AUTO)
+    is_exhaustive = config.get("strategy") == "exhaustive"
     if config.get("strategy") in ("random", "operator_based"):
         strat = SelectionStrategy.GREEDY
 
@@ -262,19 +263,24 @@ def _run_engine(job_id: str, config: dict) -> dict:
     # ── Phase 2: IMPT scores, reduces, and selects within budget ─────────────
     engine = IMPTEngine(project, config=ecfg)
 
-    # Score the population
-    engine.scorer.score_population(all_mutants)
+    if is_exhaustive:
+        # Exhaustive: skip scoring, subsumption, and knapsack — run every mutant
+        selected = list(all_mutants)
+        log.info("Job %s: EXHAUSTIVE — running all %d mutants", job_id, len(selected))
+    else:
+        # Score the population
+        engine.scorer.score_population(all_mutants)
 
-    # Reduce via subsumption
-    reduced = engine.reducer.reduce(all_mutants)
+        # Reduce via subsumption
+        reduced = engine.reducer.reduce(all_mutants)
 
-    # Estimate execution times
-    engine.estimator.estimate_population(reduced)
+        # Estimate execution times
+        engine.estimator.estimate_population(reduced)
 
-    # Select within time budget
-    selected = engine.optimizer.select(reduced)
-    log.info("Job %s: IMPT selected %d/%d mutants within %ds budget",
-             job_id, len(selected), len(all_mutants), ecfg.time_budget_seconds)
+        # Select within time budget
+        selected = engine.optimizer.select(reduced)
+        log.info("Job %s: IMPT selected %d/%d mutants within %ds budget",
+                 job_id, len(selected), len(all_mutants), ecfg.time_budget_seconds)
 
     # Write selected count
     _write_progress_sync(job_id, 0, 0, len(all_mutants), len(selected))
@@ -549,11 +555,87 @@ def run_mutation_job_sync(job_id: str, config: dict) -> dict:
         result  = _run_engine(job_id, config)
         records = result.pop("mutant_records", [])
         _mark_completed_sync(job_id, result, records)
+        # If this was an exhaustive job on a FOSS project, save as permanent baseline
+        if config.get("strategy") == "exhaustive" and config.get("foss_project_id"):
+            _save_exhaustive_baseline(config["foss_project_id"], result)
         return {**result, "mutant_records": records}
     except Exception as e:
         log.error("Job %s failed: %s", job_id, e)
         _mark_failed_sync(job_id, str(e))
         raise
+
+
+def _save_exhaustive_baseline(foss_project_id: str, result: dict) -> None:
+    """Persist exhaustive run result as the permanent ground-truth baseline."""
+    import json as _json
+    import sqlite3 as _sql
+    from config.settings import get_settings
+    settings = get_settings()
+    db_url = settings.DATABASE_URL or ""
+
+    op_breakdown = _json.dumps(result.get("result_json", {}).get("operator_stats", {}))
+
+    try:
+        if "sqlite" in db_url:
+            db_path = db_url.replace("sqlite:///", "").replace("sqlite://", "")
+            conn = _sql.connect(db_path)
+            cur  = conn.cursor()
+            cur.execute("""
+                INSERT INTO exhaustive_baselines
+                    (id, project_id, total_mutants, killed_mutants, mutation_score,
+                     execution_time_seconds, equivalent_mutants, operator_breakdown,
+                     source, computed_at)
+                VALUES (lower(hex(randomblob(18))), ?, ?, ?, ?, ?, 0, ?, 'computed', datetime('now'))
+                ON CONFLICT(project_id) DO UPDATE SET
+                    total_mutants=excluded.total_mutants,
+                    killed_mutants=excluded.killed_mutants,
+                    mutation_score=excluded.mutation_score,
+                    execution_time_seconds=excluded.execution_time_seconds,
+                    operator_breakdown=excluded.operator_breakdown,
+                    computed_at=datetime('now')
+            """, (
+                foss_project_id,
+                result.get("total_mutants", 0),
+                result.get("killed_mutants", 0),
+                result.get("mutation_score", 0.0),
+                result.get("execution_time_seconds", 0.0),
+                op_breakdown,
+            ))
+            conn.commit()
+            conn.close()
+            log.info("Saved exhaustive baseline for FOSS project %s", foss_project_id)
+        else:
+            # PostgreSQL — use psycopg2 directly (sync context)
+            import psycopg2
+            conn = psycopg2.connect(db_url.replace("postgresql+asyncpg", "postgresql")
+                                          .replace("postgresql+psycopg2", "postgresql"))
+            cur  = conn.cursor()
+            cur.execute("""
+                INSERT INTO exhaustive_baselines
+                    (id, project_id, total_mutants, killed_mutants, mutation_score,
+                     execution_time_seconds, equivalent_mutants, operator_breakdown,
+                     source, computed_at)
+                VALUES (gen_random_uuid()::text, %s, %s, %s, %s, %s, 0, %s, 'computed', NOW())
+                ON CONFLICT(project_id) DO UPDATE SET
+                    total_mutants=EXCLUDED.total_mutants,
+                    killed_mutants=EXCLUDED.killed_mutants,
+                    mutation_score=EXCLUDED.mutation_score,
+                    execution_time_seconds=EXCLUDED.execution_time_seconds,
+                    operator_breakdown=EXCLUDED.operator_breakdown,
+                    computed_at=NOW()
+            """, (
+                foss_project_id,
+                result.get("total_mutants", 0),
+                result.get("killed_mutants", 0),
+                result.get("mutation_score", 0.0),
+                result.get("execution_time_seconds", 0.0),
+                op_breakdown,
+            ))
+            conn.commit()
+            conn.close()
+            log.info("Saved exhaustive baseline for FOSS project %s", foss_project_id)
+    except Exception as exc:
+        log.error("Failed to save exhaustive baseline: %s", exc)
 
 
 # Celery task registration

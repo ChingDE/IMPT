@@ -80,4 +80,9 @@ export const getSystemConfig  = ()         => client.get('/api/admin/config').th
 export const updateConfig     = (key,val)  => client.put(`/api/admin/config/${key}`, { value: val }).then(r => r.data);
 export const getAuditLogs     = (p)        => client.get('/api/admin/logs', { params: p }).then(r => r.data);
 
+// ── FOSS Projects ─────────────────────────────────────────────────
+export const listFossProjects  = (params)  => client.get('/api/foss', { params }).then(r => r.data);
+export const getFossProject    = (slug)    => client.get(`/api/foss/${slug}`).then(r => r.data);
+export const getFossBaseline   = (slug)    => client.get(`/api/foss/${slug}/baseline`).then(r => r.data);
+
 export default client;

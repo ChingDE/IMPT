@@ -169,7 +169,14 @@ class TestSession(Base):
     # Time budget (FR080–FR090)
     time_budget_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    # Comparison strategies (FR093)
+    # Strategy selection (redesigned: single strategy + optional exhaustive)
+    selected_strategy: Mapped[str]   = mapped_column(String(30), default="impt")  # impt | random | operator_based
+    run_exhaustive: Mapped[bool]     = mapped_column(Boolean, default=False)
+
+    # FOSS project (if user selected a pre-loaded project instead of uploading)
+    foss_project_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("foss_projects.id"), nullable=True)
+
+    # Legacy fields kept for backward compat
     run_comparison: Mapped[bool]     = mapped_column(Boolean, default=True)
     run_operator_based: Mapped[bool] = mapped_column(Boolean, default=True)
     # Estimated mutant count (FR080)
@@ -339,3 +346,55 @@ class SystemConfig(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     updated_by: Mapped[Optional[str]]  = mapped_column(String(36), nullable=True)
     updated_at: Mapped[datetime]       = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+# ── FOSS Projects ─────────────────────────────────────────────────────────────
+
+class FossProject(Base):
+    """Pre-loaded FOSS projects for trust-building and Chapter 4 validation.
+    Users can select these instead of uploading their own project.
+    Exhaustive baselines are pre-computed and stored in ExhaustiveBaseline.
+    """
+    __tablename__ = "foss_projects"
+
+    id:           Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    slug:         Mapped[str] = mapped_column(String(100), unique=True, nullable=False)  # e.g. "commons-lang"
+    name:         Mapped[str] = mapped_column(String(200), nullable=False)
+    description:  Mapped[str] = mapped_column(Text, nullable=False)
+    language:     Mapped[str] = mapped_column(String(20), nullable=False)   # java | javascript
+    domain:       Mapped[str] = mapped_column(String(100), nullable=False)  # utility | data-processing | etc.
+    github_url:   Mapped[str] = mapped_column(String(500), nullable=False)
+    license:      Mapped[str] = mapped_column(String(50), nullable=False)   # MIT | Apache-2.0 | etc.
+    loc:          Mapped[int] = mapped_column(Integer, nullable=False)
+    size_band:    Mapped[str] = mapped_column(String(20), nullable=False)   # small | medium | large
+    test_count:   Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    version:      Mapped[str] = mapped_column(String(50), nullable=False)   # pinned version used
+    zip_path:     Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # path on server
+    is_active:    Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at:   Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    baseline: Mapped[Optional["ExhaustiveBaseline"]] = relationship(
+        "ExhaustiveBaseline", back_populates="project", uselist=False
+    )
+
+
+class ExhaustiveBaseline(Base):
+    """Pre-computed exhaustive mutation testing results for a FOSS project.
+    Once computed, stored permanently as ground truth for all future sessions.
+    source: 'computed' (ran on our server) | 'literature' (from published research)
+    """
+    __tablename__ = "exhaustive_baselines"
+
+    id:              Mapped[str]   = mapped_column(String(36), primary_key=True, default=_uuid)
+    project_id:      Mapped[str]   = mapped_column(String(36), ForeignKey("foss_projects.id", ondelete="CASCADE"), nullable=False, unique=True)
+    total_mutants:   Mapped[int]   = mapped_column(Integer, nullable=False)
+    killed_mutants:  Mapped[int]   = mapped_column(Integer, nullable=False)
+    mutation_score:  Mapped[float] = mapped_column(Float, nullable=False)     # 0.0–1.0
+    execution_time_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    equivalent_mutants: Mapped[int] = mapped_column(Integer, default=0)
+    operator_breakdown: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON {op: {total, killed}}
+    source:          Mapped[str]   = mapped_column(String(20), default="computed")  # computed | literature
+    computed_at:     Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    notes:           Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    project: Mapped["FossProject"] = relationship("FossProject", back_populates="baseline")

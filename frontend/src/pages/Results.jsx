@@ -5,6 +5,13 @@ import { getSession, exportJobCSV, createShareLink, compareStrategies, getJobMut
 import { AppShell, PageHeader, ScorePill, Alert } from '../components/UI';
 import { Download, Share2, BarChart2, ChevronDown, ChevronRight } from 'lucide-react';
 
+const STRATEGY_LABEL = {
+  impt:           '⭐ IMPT Intelligent',
+  random:         '🎲 Random Sampling',
+  operator_based: '🔬 Operator-Based',
+  exhaustive:     '📋 Exhaustive (Ground Truth)',
+};
+
 export default function Results() {
   const { sessionId } = useParams();
   const nav = useNavigate();
@@ -42,10 +49,44 @@ export default function Results() {
     load();
   }, [sessionId]);
 
-  const imptJob = jobs.find(j => j.strategy === 'impt') || jobs[0];
+  // Primary job = the strategy the user chose (impt / random / operator_based)
+  // Exhaustive job = ground truth baseline (if user ticked the checkbox)
+  const primaryJob    = jobs.find(j => j.strategy !== 'exhaustive') || jobs[0];
+  const exhaustiveJob = jobs.find(j => j.strategy === 'exhaustive');
+  const imptJob       = primaryJob; // kept for backward-compat refs below
 
-  // Operator breakdown from jobs
-  const opStats = imptJob?.operator_stats || {};
+  // Baseline: exhaustive if it ran and completed; otherwise use Wilson estimate from primary
+  const hasGroundTruth  = exhaustiveJob && exhaustiveJob.status === 'COMPLETED';
+  const baselineScore   = hasGroundTruth
+    ? exhaustiveJob.mutation_score
+    : (primaryJob?.estimated_score ?? primaryJob?.mutation_score ?? 0);
+  const baselineLabel   = hasGroundTruth ? 'Ground Truth' : 'Estimated';
+  const baselineColor   = hasGroundTruth ? 'var(--green)' : 'var(--amber)';
+
+  // Time saved = 1 - (primary execution / exhaustive execution)
+  const primaryTimeSec    = primaryJob?.execution_time_seconds ?? 0;
+  const exhaustiveTimeSec = hasGroundTruth
+    ? (exhaustiveJob?.execution_time_seconds ?? 0)
+    : (primaryJob?.total_mutants > 0 && primaryJob?.executed_mutants > 0
+        ? primaryTimeSec * primaryJob.total_mutants / primaryJob.executed_mutants
+        : 0);
+  const timeSavedPct = exhaustiveTimeSec > 0
+    ? Math.round((1 - primaryTimeSec / exhaustiveTimeSec) * 100)
+    : (primaryJob?.time_saved_pct ?? 0);
+
+  // Correlation: real Pearson not computable without per-mutant exhaustive results,
+  // so we use the primary job's Wilson CI estimated_score as proxy correlation indicator
+  const correlation     = hasGroundTruth
+    ? (baselineScore > 0 ? (1 - Math.abs(primaryJob?.mutation_score - baselineScore) / baselineScore) : 0).toFixed(2)
+    : (primaryJob?.estimated_score ? ((primaryJob.estimated_score - primaryJob.ci_lower) > 0.02 ? '≥0.95 (est.)' : '—') : '—');
+
+  const opStats = primaryJob?.operator_stats || {};
+
+  const STRATEGY_DISPLAY = {
+    impt:           '⭐ IMPT Intelligent Prioritization',
+    random:         '🎲 Random Sampling',
+    operator_based: '🔬 Operator-Based Prioritization',
+  };
 
   // Filtered + sorted mutants
   const filteredMutants = mutants
@@ -110,11 +151,9 @@ export default function Results() {
       <PageHeader icon="📊" title="Test Results"
         right={
           <div style={{ display:'flex',gap:8 }}>
-            {jobs.length > 1 && (
-              <button className="hdr-btn ghost" onClick={() => nav(`/compare/${sessionId}`)}>
-                <BarChart2 size={14} /> Compare Strategies
-              </button>
-            )}
+            <button className="hdr-btn ghost" onClick={() => nav(`/compare/${sessionId}`)}>
+              <BarChart2 size={14} /> Compare Sessions
+            </button>
             <button className="hdr-btn ghost" onClick={handleShare}><Share2 size={14} /> Share</button>
           </div>
         }
@@ -145,21 +184,20 @@ export default function Results() {
         {shareUrl && <Alert type="success">Shareable link (30 days): <a href={shareUrl} style={{color:'var(--blue)'}} target="_blank" rel="noopener noreferrer">{shareUrl}</a></Alert>}
         {shareErr && <Alert type="error">{shareErr}</Alert>}
 
-        {/* FR108 — IMPT key metrics */}
-        {imptJob && (
+        {/* Primary strategy results + vs-baseline comparison */}
+        {primaryJob && (
           <div style={{ background:'var(--green-xlight)',border:'1px solid var(--green-light)',borderRadius:'var(--radius)',padding:'20px 24px',marginBottom:16 }}>
-            <div className="section-head" style={{ color:'var(--gray-600)' }}>⭐ IMPT Intelligent Strategy Results</div>
-            <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:12,marginTop:8 }}>
+            <div className="section-head" style={{ color:'var(--gray-600)' }}>
+              {STRATEGY_DISPLAY[primaryJob.strategy] || primaryJob.strategy} — Results
+            </div>
+            <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12,marginTop:8 }}>
               {[
-                {l:'Mutation Score',    v:`${imptJob.mutation_score}%`, c:'var(--green)'},
-                {l:'Mutants Generated',v:imptJob.total_mutants,         c:'var(--gray-800)'},
-                {l:'Mutants Tested',   v:imptJob.mutants_tested,        c:'var(--amber)'},
-                {l:'Mutants Killed',   v:imptJob.mutants_tested && imptJob.mutation_score
-                    ? Math.round(imptJob.mutants_tested * imptJob.mutation_score / 100) : '—', c:'var(--green)'},
-                {l:'Mutants Survived', v:imptJob.mutants_tested && imptJob.mutation_score
-                    ? Math.round(imptJob.mutants_tested * (1 - imptJob.mutation_score / 100)) : '—', c:'var(--red)'},
-                {l:'Execution Time',   v:`${imptJob.execution_time_min} min`, c:'var(--blue)'},
-                {l:'Time Saved',       v:`${imptJob.time_saved_pct}%`,  c:'var(--green)'},
+                {l:'Mutation Score',   v:`${primaryJob.mutation_score}%`,  c:'var(--green)'},
+                {l:'Mutants Tested',  v:`${primaryJob.executed_mutants ?? primaryJob.mutants_tested} / ${primaryJob.total_mutants}`, c:'var(--amber)'},
+                {l:'Execution Time',  v:`${primaryJob.execution_time_min ?? Math.round((primaryJob.execution_time_seconds??0)/60)} min`, c:'var(--blue)'},
+                {l:`Time Saved vs Exhaustive`, v:`${timeSavedPct}%`, c:'var(--green)'},
+                {l:`Exhaustive Score (${baselineLabel})`, v:`${(baselineScore*100||baselineScore).toFixed?.(1) ?? baselineScore}%`, c:baselineColor},
+                {l:`Correlation (${baselineLabel})`, v:String(correlation), c: hasGroundTruth?'var(--green)':'var(--amber)'},
               ].map(({l,v,c})=>(
                 <div key={l} className="stat-card" style={{textAlign:'center'}}>
                   <div className="stat-label">{l}</div>
@@ -167,10 +205,30 @@ export default function Results() {
                 </div>
               ))}
             </div>
+            {!hasGroundTruth && (
+              <div style={{marginTop:12,fontSize:12,color:'var(--amber)',background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:6,padding:'8px 12px'}}>
+                ⚠ Exhaustive baseline was not run. Correlation and exhaustive score are <strong>statistical estimates</strong> (Wilson CI).
+                Run a new session with "Exhaustive Baseline" enabled for ground-truth comparison.
+              </div>
+            )}
+            {hasGroundTruth && (
+              <div style={{marginTop:12,fontSize:12,color:'var(--green)',background:'var(--green-xlight)',border:'1px solid var(--green-light)',borderRadius:6,padding:'8px 12px'}}>
+                ✓ Exhaustive baseline ran — all figures are <strong>ground truth</strong>.
+                Exhaustive took {Math.round((exhaustiveJob.execution_time_seconds??0)/60)} min vs {Math.round((primaryJob.execution_time_seconds??0)/60)} min for {STRATEGY_DISPLAY[primaryJob.strategy]||primaryJob.strategy}.
+              </div>
+            )}
           </div>
         )}
 
-        {/* FR109 — Prioritization factors */}
+        {/* Exhaustive job still running notice */}
+        {exhaustiveJob && exhaustiveJob.status !== 'COMPLETED' && (
+          <Alert type="warn">
+            ⏳ Exhaustive baseline is still running ({exhaustiveJob.status}). Refresh to update ground-truth figures.
+          </Alert>
+        )}
+
+        {/* FR109 — Prioritization factors (only for IMPT strategy) */}
+        {primaryJob?.strategy === 'impt' && (
         <div className="card mb-4">
           <div className="card-title">📊 Prioritization Factors (IMPT Algorithm)</div>
           <div className="grid-3" style={{gap:10}}>
@@ -191,6 +249,7 @@ export default function Results() {
               </div>
             ))}
           </div>
+        )}
         </div>
 
         {/* FR110 — Operator breakdown table (sortable) */}

@@ -1,7 +1,7 @@
 // src/pages/NewSession.jsx  FR051–FR096
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { createSession, getSession, uploadProject, configureOperators, setBudget, startTesting } from '../api/client';
+import { createSession, getSession, uploadProject, configureOperators, setBudget, startTesting, listFossProjects } from '../api/client';
 import { AppShell, WizardHeader, Alert, InfoBox, TooltipIcon } from '../components/UI';
 
 // Operators supported by IMPT — grouped by framework support
@@ -123,17 +123,23 @@ export function NewSessionUpload() {
   const [progress, setProgress] = useState(0);
   const [dragOver, setDragOver]   = useState(false);
   const [uploadDone, setUploadDone] = useState(false);
+  const [tab, setTab]           = useState('upload');  // 'upload' | 'foss'
+  const [fossProjects, setFossProjects] = useState([]);
+  const [fossFilter, setFossFilter] = useState('all');  // all | java | javascript
+  const [fossSelected, setFossSelected] = useState(null);
 
   useEffect(() => {
     getSession(id).then(s => {
       setSession(s);
       if (s.upload_path && s.status !== 'not_started') setUploadDone(true);
+      if (s.foss_project_id) { setTab('foss'); setUploadDone(true); }
     }).catch(err => {
       if (err?.response?.status === 404 || err?.response?.status === 403)
         nav('/dashboard');
       else
         setError('Failed to load session. Please check your connection and try again.');
     });
+    listFossProjects().then(setFossProjects).catch(() => {});
   }, [id]);
 
   if (!session) return (
@@ -178,7 +184,95 @@ export function NewSessionUpload() {
         right={<button className="hdr-btn ghost" onClick={() => nav('/dashboard')}>Cancel</button>} />
       <div className="page-content">
         <div className="card" style={{ maxWidth: 720, margin: '0 auto' }}>
-          <h2 style={{ fontSize:17,fontWeight:700,marginBottom:8 }}>Upload Your Project</h2>
+          <h2 style={{ fontSize:17,fontWeight:700,marginBottom:8 }}>Select Your Project</h2>
+
+          {/* Tab switcher */}
+          <div style={{ display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid var(--gray-200)' }}>
+            {[['upload','📁 Upload Your Own'],['foss','🔬 Use FOSS Project']].map(([t,l])=>(
+              <button key={t}
+                style={{ padding:'8px 18px',fontWeight:600,fontSize:13,border:'none',cursor:'pointer',
+                  background:'transparent', color: tab===t?'var(--purple-mid)':'var(--gray-500)',
+                  borderBottom: tab===t?'2px solid var(--purple-mid)':'2px solid transparent',
+                  marginBottom:'-2px' }}
+                onClick={()=>setTab(t)}>{l}
+              </button>
+            ))}
+          </div>
+
+          {/* FOSS project panel */}
+          {tab === 'foss' && (
+            <div>
+              <p style={{ fontSize:13,color:'var(--gray-500)',marginBottom:12 }}>
+                Select a pre-loaded open-source project. These have pre-computed exhaustive baselines for ground-truth comparison.
+              </p>
+              <div style={{ display:'flex',gap:8,marginBottom:12 }}>
+                {['all','java','javascript'].map(f=>(
+                  <button key={f} className={`btn btn-sm ${fossFilter===f?'btn-primary':'btn-secondary'}`}
+                    onClick={()=>setFossFilter(f)}>
+                    {f==='all'?'All':f==='java'?'☕ Java':'🟨 JavaScript'}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:10,maxHeight:380,overflowY:'auto' }}>
+                {fossProjects
+                  .filter(p => fossFilter==='all' || p.language===fossFilter)
+                  .map(p => (
+                  <div key={p.id}
+                    style={{ border:`2px solid ${fossSelected?.id===p.id?'var(--purple-mid)':'var(--gray-200)'}`,
+                      borderRadius:8,padding:'12px 14px',cursor:'pointer',
+                      background: fossSelected?.id===p.id?'var(--purple-xlight)':'#fff' }}
+                    onClick={()=>setFossSelected(p)}>
+                    <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
+                      <div style={{ fontWeight:700,fontSize:13 }}>{p.name}</div>
+                      <span style={{ fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:999,
+                        background: p.language==='java'?'#dbeafe':'#dcfce7',
+                        color: p.language==='java'?'#1d4ed8':'#15803d' }}>
+                        {p.language==='java'?'Java':'JS'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize:11,color:'var(--gray-500)',marginTop:3 }}>{p.description.slice(0,90)}…</div>
+                    <div style={{ display:'flex',gap:8,marginTop:6,flexWrap:'wrap' }}>
+                      <span style={{ fontSize:10,color:'var(--gray-500)' }}>📏 {p.loc.toLocaleString()} LOC</span>
+                      <span style={{ fontSize:10,color:'var(--gray-500)' }}>🏷 {p.size_band}</span>
+                      {p.has_baseline
+                        ? <span style={{ fontSize:10,color:'var(--green)',fontWeight:600 }}>✓ Baseline: {(p.baseline_mutation_score*100).toFixed(1)}%</span>
+                        : <span style={{ fontSize:10,color:'var(--amber)' }}>⏳ Baseline pending</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {fossSelected && (
+                <div style={{ marginTop:12,padding:'10px 14px',background:'var(--green-xlight)',
+                  border:'1px solid var(--green-light)',borderRadius:8,fontSize:13 }}>
+                  Selected: <strong>{fossSelected.name}</strong> ({fossSelected.loc.toLocaleString()} LOC · {fossSelected.version}) ·{' '}
+                  {fossSelected.has_baseline
+                    ? <span style={{color:'var(--green)',fontWeight:600}}>Ground truth baseline available ({(fossSelected.baseline_mutation_score*100).toFixed(1)}% exhaustive score)</span>
+                    : <span style={{color:'var(--amber)'}}>No baseline yet — will use estimation</span>}
+                </div>
+              )}
+              <div className="flex justify-between mt-4">
+                <button className="btn btn-secondary" onClick={()=>nav('/new-session')}>← Back</button>
+                <button className="btn btn-primary btn-lg"
+                  disabled={!fossSelected || loading}
+                  onClick={async () => {
+                    if (!fossSelected) return;
+                    setLoading(true); setError('');
+                    try {
+                      // Patch session with foss_project_id and language
+                      const { updateSession } = await import('../api/client');
+                      await updateSession(id, { foss_project_id: fossSelected.id, language: fossSelected.language });
+                      nav(`/sessions/${id}/operators`);
+                    } catch(e){ setError(e.response?.data?.detail||'Failed to select project.'); }
+                    finally{ setLoading(false); }
+                  }}>
+                  {loading?'Saving…':'Use This Project →'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Upload panel */}
+          {tab === 'upload' && <div>
           <p style={{ fontSize:13,color:'var(--gray-500)',marginBottom:16 }}>
             Please upload a ZIP file containing your project with test cases. Ensure build configuration
             ({lang === 'java' ? 'pom.xml or build.gradle for Java' : 'package.json for JavaScript'}) is included.
@@ -255,6 +349,7 @@ export function NewSessionUpload() {
               </button>
             )}
           </div>
+          </div>}  {/* end tab === 'upload' */}
         </div>
       </div>
     </AppShell>
@@ -369,32 +464,42 @@ export function NewSessionBudget() {
   const nav    = useNavigate();
   const [session, setSession] = useState(null);
   const [budget, setBudgetVal] = useState(20);
-  const [runComparison, setRunComparison]     = useState(true);
-  const [runOperatorBased, setRunOperatorBased] = useState(true);
-  const [lowBudgetConfirmed, setLowBudgetConfirmed] = useState(false);
+  const [strategy, setStrategy] = useState('impt');
+  const [runExhaustive, setRunExhaustive] = useState(false);
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     getSession(id).then(s => {
       setSession(s);
-      if (s.time_budget_minutes) setBudgetVal(s.time_budget_minutes);
-      if (s.run_comparison !== undefined)    setRunComparison(s.run_comparison);
-      if (s.run_operator_based !== undefined) setRunOperatorBased(s.run_operator_based);
+      if (s.time_budget_minutes)  setBudgetVal(s.time_budget_minutes);
+      if (s.selected_strategy)    setStrategy(s.selected_strategy);
+      if (s.run_exhaustive !== undefined) setRunExhaustive(s.run_exhaustive);
     }).catch(err => { if(!err?.response?.status || err?.response?.status===404 || err?.response?.status===403) nav('/dashboard'); });
   }, [id]);
 
   if (!session) return <AppShell><div className="page-content" style={{textAlign:'center',paddingTop:60,color:'var(--gray-400)'}}>Loading…</div></AppShell>;
 
-  // FR087 — Dynamic metrics
   const estCoverage = Math.min(100, Math.round(10 + (budget/120)*85));
   const correlation = budget >= 30 ? 'High (≥0.95)' : budget >= 15 ? 'Medium (0.85-0.94)' : 'Low (<0.85)';
   const corrColor   = budget >= 30 ? 'var(--green)' : budget >= 15 ? 'var(--amber)' : 'var(--red)';
 
+  const STRATEGIES = [
+    { value:'impt',           label:'⭐ IMPT Intelligent Prioritization', desc:'Multi-factor scoring, subsumption analysis, knapsack optimization. Recommended.' },
+    { value:'operator_based', label:'🔬 Operator-Based Prioritization',   desc:'Selects mutants by historical operator effectiveness. Simple heuristic.' },
+    { value:'random',         label:'🎲 Random Sampling',                  desc:'Selects mutants uniformly at random. Baseline comparison strategy.' },
+  ];
+
   const handleNext = async () => {
     setLoading(true); setError('');
     try {
-      await setBudget(id, { time_budget_minutes: budget, run_comparison: runComparison, run_operator_based: runOperatorBased });
+      await setBudget(id, {
+        time_budget_minutes: budget,
+        selected_strategy:   strategy,
+        run_exhaustive:      runExhaustive,
+        run_comparison:      false,
+        run_operator_based:  false,
+      });
       nav(`/sessions/${id}/review`);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to save budget.');
@@ -435,15 +540,39 @@ export function NewSessionBudget() {
                 <Alert type="success">✓ High time budget selected. Expect high confidence coverage and correlation with exhaustive testing.</Alert>
               )}
 
-              {/* FR093 — Comparison toggle */}
+              {/* Strategy selector */}
               <div className="mt-4">
-                <label className="form-check">
-                  <input type="checkbox" checked={runComparison} onChange={e=>setRunComparison(e.target.checked)} />
-                  Run comparison with Random Sampling strategy
+                <label className="form-label">Prioritization Strategy</label>
+                {STRATEGIES.map(s => (
+                  <div key={s.value}
+                    className={`op-item ${strategy===s.value?'checked':''}`}
+                    style={{marginBottom:6}}
+                    onClick={()=>setStrategy(s.value)}>
+                    <input type="radio" checked={strategy===s.value} onChange={()=>setStrategy(s.value)}
+                      style={{accentColor:'var(--purple-mid)',width:16,height:16,flexShrink:0}} />
+                    <div className="op-info">
+                      <div className="op-name">{s.label}</div>
+                      <div className="op-desc">{s.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Exhaustive baseline checkbox */}
+              <div className="mt-4" style={{background:'var(--amber-light)',border:'1px solid #FDE68A',borderRadius:8,padding:'12px 14px'}}>
+                <label className="form-check" style={{fontWeight:600}}>
+                  <input type="checkbox" checked={runExhaustive} onChange={e=>setRunExhaustive(e.target.checked)} />
+                  Also run Exhaustive Baseline (Ground Truth)
                 </label>
-                <div style={{ fontSize:12,color:'var(--gray-400)',marginLeft:22 }}>
-                  Default: on. Disabling reduces execution time but removes comparative metrics.
+                <div style={{fontSize:12,color:'var(--gray-600)',marginLeft:22,marginTop:4,lineHeight:1.55}}>
+                  Runs ALL mutants after your chosen strategy completes. Provides real ground-truth mutation score and true correlation.
+                  <strong> Warning: significantly increases total execution time.</strong>
                 </div>
+                {!runExhaustive && (
+                  <div style={{fontSize:11,color:'var(--gray-500)',marginLeft:22,marginTop:4}}>
+                    Without exhaustive: correlation shown is a <em>statistical estimate</em> (Wilson CI). With exhaustive: it's <em>ground truth</em>.
+                  </div>
+                )}
               </div>
 
               {/* FR088 — Recommendations */}
@@ -505,6 +634,11 @@ export function NewSessionReview() {
   useEffect(() => { getSession(id).then(setSession).catch(err => { if(!err?.response?.status || err?.response?.status===404 || err?.response?.status===403) nav('/dashboard'); }); },[id]);
 
   const ops = session?.selected_operators ? JSON.parse(session.selected_operators) : [];
+  const strategyLabel = {
+    impt:           '⭐ IMPT Intelligent Prioritization',
+    operator_based: '🔬 Operator-Based Prioritization',
+    random:         '🎲 Random Sampling',
+  }[session?.selected_strategy || 'impt'] || session?.selected_strategy;
 
   const handleStart = async () => {
     setShowConfirm(false);
@@ -540,7 +674,8 @@ export function NewSessionReview() {
               ['Lines of Code', session?.loc?.toLocaleString() || '—'],
               ['Selected Operators', `${ops.length} of ${OPERATORS.length} (${ops.join(', ')})`],
               ['Time Budget', `${session?.time_budget_minutes} minutes`],
-              ['Comparison Strategies', session?.run_comparison ? 'IMPT Intelligent + Random Sampling' : 'IMPT Intelligent only'],
+              ['Prioritization Strategy', strategyLabel],
+              ['Exhaustive Baseline', session?.run_exhaustive ? '✓ Yes — Ground Truth comparison' : 'No — Statistical estimate (Wilson CI)'],
             ].map(([l,v])=>(
               <div className="summary-row" key={l}>
                 <span className="lbl">{l}</span>

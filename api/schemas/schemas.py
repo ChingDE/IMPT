@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
@@ -176,6 +176,9 @@ class SessionOut(BaseModel):
     detected_framework: Optional[str] = None
     selected_operators: Optional[str] = None
     time_budget_minutes: Optional[int] = None
+    selected_strategy: str = "impt"
+    run_exhaustive: bool = False
+    foss_project_id: Optional[str] = None
     run_comparison: bool = True
     run_operator_based: bool = True
     estimated_mutant_count: Optional[int] = None
@@ -192,6 +195,8 @@ class SessionOut(BaseModel):
 class SessionUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     description: Optional[str] = Field(default=None, max_length=500)
+    foss_project_id: Optional[str] = None
+    language: Optional[str] = None
 
 
 class OperatorConfigRequest(BaseModel):
@@ -200,8 +205,32 @@ class OperatorConfigRequest(BaseModel):
 
 class TimeBudgetRequest(BaseModel):
     time_budget_minutes: int = Field(ge=5, le=120)
+    selected_strategy: str = "impt"        # impt | random | operator_based
+    run_exhaustive: bool = False
+    # Legacy fields kept for backward compat
     run_comparison: bool = True
     run_operator_based: bool = True
+
+
+class FossProjectOut(BaseModel):
+    id: str
+    slug: str
+    name: str
+    description: str
+    language: str
+    domain: str
+    github_url: str
+    license: str
+    loc: int
+    size_band: str
+    test_count: Optional[int]
+    version: str
+    has_baseline: bool = False
+    baseline_mutation_score: Optional[float] = None
+    baseline_total_mutants: Optional[int] = None
+    baseline_execution_time_seconds: Optional[float] = None
+    baseline_source: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Jobs ───────────────────────────────────────────────────────────────────────
