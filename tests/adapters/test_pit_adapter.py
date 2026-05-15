@@ -153,3 +153,55 @@ def test_count_loc():
         (src / "Calc.java").write_text("public class Calc {\n  int add(int a, int b) { return a + b; }\n}\n")
         adapter = PITAdapter(root, use_docker=False)
         assert adapter.count_loc() > 0
+
+
+def test_killing_test_populates_coverage():
+    """killingTest from PIT XML is used as a coverage proxy in test_coverage."""
+    import tempfile, textwrap
+    from pathlib import Path
+    from adapters.pit_adapter import PITAdapter
+
+    xml = textwrap.dedent("""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <mutations>
+          <mutation detected='true' status='KILLED'>
+            <sourceFile>Calculator.java</sourceFile>
+            <mutatedClass>com.example.Calculator</mutatedClass>
+            <mutatedMethod>add</mutatedMethod>
+            <lineNumber>10</lineNumber>
+            <mutator>org.pitest.mutationtest.engine.gregor.mutators.ArithmeticOperatorReplacementMutator</mutator>
+            <description>Replaced + with -</description>
+            <killingTest>com.example.CalculatorTest.testAdd()</killingTest>
+          </mutation>
+          <mutation detected='false' status='SURVIVED'>
+            <sourceFile>Calculator.java</sourceFile>
+            <mutatedClass>com.example.Calculator</mutatedClass>
+            <mutatedMethod>multiply</mutatedMethod>
+            <lineNumber>20</lineNumber>
+            <mutator>org.pitest.mutationtest.engine.gregor.mutators.NegateConditionalsMutator</mutator>
+            <description>Negated condition</description>
+            <killingTest/>
+          </mutation>
+        </mutations>
+    """).strip()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        report_dir = root / "target" / "pit-reports"
+        report_dir.mkdir(parents=True)
+        (report_dir / "mutations.xml").write_text(xml)
+
+        adapter = PITAdapter(root, use_docker=False)
+        mutants = adapter._parse_results()
+
+        killed  = next(m for m in mutants if m.location.line == 10)
+        survived = next(m for m in mutants if m.location.line == 20)
+
+        # Killed mutant: has killingTest + method proxy
+        assert "com.example.CalculatorTest.testAdd()" in killed.test_coverage
+        assert "method:add" in killed.test_coverage
+
+        # Survived mutant: no killingTest, only method proxy
+        assert "method:multiply" in survived.test_coverage
+        assert len([t for t in survived.test_coverage
+                    if not t.startswith("method:")]) == 0

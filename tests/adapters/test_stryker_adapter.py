@@ -171,3 +171,57 @@ def test_no_report_raises():
             assert False, "Should have raised"
         except FileNotFoundError:
             pass
+
+
+def test_covered_by_populates_test_coverage():
+    """coveredBy field from Stryker perTest coverage is parsed into test_coverage set."""
+    import json, tempfile
+    from pathlib import Path
+    data = {
+        "schemaVersion": "1",
+        "files": {
+            "src/calc.js": {
+                "language": "javascript",
+                "mutants": [
+                    {
+                        "id": "1",
+                        "mutatorName": "ArithmeticOperator",
+                        "replacement": "a - b",
+                        "status": "Killed",
+                        "coveredBy": ["test_add", "test_subtract"],
+                        "location": {"start": {"line": 5, "column": 0},
+                                     "end":   {"line": 5, "column": 5}},
+                    },
+                    {
+                        "id": "2",
+                        "mutatorName": "EqualityOperator",
+                        "replacement": "x <= y",
+                        "status": "Survived",
+                        "coveredBy": [],
+                        "location": {"start": {"line": 10, "column": 0},
+                                     "end":   {"line": 10, "column": 5}},
+                    },
+                ],
+            }
+        },
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _write_report(Path(tmp), data)
+        adapter = StrykerAdapter(root, use_docker=False)
+        mutants = adapter._parse_results()
+        m_with_cov = next(m for m in mutants if m.location.line == 5)
+        m_no_cov   = next(m for m in mutants if m.location.line == 10)
+        assert m_with_cov.test_coverage == {"test_add", "test_subtract"}
+        assert m_no_cov.test_coverage   == set()
+
+
+def test_missing_covered_by_gives_empty_coverage():
+    """Mutants without coveredBy field get empty test_coverage."""
+    import json, tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _write_report(Path(tmp), SAMPLE_V6)
+        adapter = StrykerAdapter(root, use_docker=False)
+        mutants = adapter._parse_results()
+        # SAMPLE_V6 has no coveredBy — all should have empty coverage
+        assert all(m.test_coverage == set() for m in mutants)
