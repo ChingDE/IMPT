@@ -31,16 +31,18 @@ export default function Help() {
       title: 'Mutation Operators',
       body: `Mutation operators introduce small, systematic changes to your code to verify that your tests can detect them.
 
-AOR (Arithmetic Operator Replacement): Replaces +, -, *, / with each other. 92% effectiveness. Java & JS.
-ROR (Relational Operator Replacement): Changes <, >, ==, != comparisons. 88% effectiveness. Java & JS.
-NEGATE_RETURN (Negate Return Value): Negates boolean/primitive return values. 85% effectiveness. Java & JS.
-COR (Conditional Operator Replacement): Alters or removes conditions. 83% effectiveness. Java & JS.
-UOI (Unary Operator Insertion): Adds/removes negation operators. 82% effectiveness. Java & JS.
-ABS (Conditional Boundary Shift): Shifts boundary conditions (> → >=). 76% effectiveness. Java/PIT only.
-SDL (Statement Deletion): Removes statements or blocks entirely. 78% effectiveness. Java & JS.
-LCR (Logical Connector Replacement): Swaps && and ||. 75% effectiveness. JS/Stryker only.
-NULL_RETURN (Null/Empty Return): Replaces return values with null or empty. 68% effectiveness. Java & JS.
-CRP (Constant Replacement): Replaces string/regex constants. 70% effectiveness. JS/Stryker only.
+Effectiveness ratings are grounded in Just et al. (2014), which tested 357 real faults from the Defects4J dataset. Ratings marked "Estimate" have no direct citation.
+
+ROR (Relational Operator Replacement): Changes <, >, ==, != comparisons. 80% effectiveness. Java & JS. [Just et al. 2014]
+ABS (Conditional Boundary Shift): Shifts boundary conditions (> → >=). 80% effectiveness. Java/PIT only. [Just et al. 2014]
+NEGATE_RETURN (Negate Return Value): Negates boolean/primitive return values. 75% effectiveness. Java & JS. [Estimate]
+COR (Conditional Operator Replacement): Alters or removes conditions. 75% effectiveness. Java & JS. [Derived from Just et al. 2014]
+AOR (Arithmetic Operator Replacement): Replaces +, -, *, / with each other. 72% effectiveness. Java & JS. [Derived from Just et al. 2014]
+UOI (Unary Operator Insertion): Adds/removes negation operators. 70% effectiveness. Java & JS. [Estimate]
+LCR (Logical Connector Replacement): Swaps && and ||. 65% effectiveness. JS/Stryker only. [Estimate]
+NULL_RETURN (Null/Empty Return): Replaces return values with null or empty. 60% effectiveness. Java & JS. [Estimate]
+CRP (Constant Replacement): Replaces string/regex constants. 55% effectiveness. JS/Stryker only. [Estimate]
+SDL (Statement Deletion): Removes statements or blocks entirely. 40% effectiveness. Java & JS. [Just et al. 2014 — significantly lower fault detection]
 
 Note: SOR (Shift), VDL (Variable Deletion), and ODL (Operator Deletion) are not available — neither PIT nor Stryker supports them in standard configuration.`,
     },

@@ -5,19 +5,23 @@ import { createSession, getSession, uploadProject, configureOperators, setBudget
 import { AppShell, WizardHeader, Alert, InfoBox, TooltipIcon } from '../components/UI';
 
 // Operators supported by IMPT — grouped by framework support
+// Effectiveness ratings grounded in Just et al. (2014), n=357 real faults from Defects4J.
+// ROR and ABS: directly cited (75-85% fault detection).
+// SDL: directly cited (35-45% fault detection).
+// AOR, COR: derived from Just et al.'s fault distribution data.
+// UOI, LCR, NEGATE_RETURN, NULL_RETURN, CRP: estimates, no direct citation.
 // framework: 'both' | 'java' | 'js'
-// SOR/VDL/ODL excluded: neither PIT nor Stryker produces them in standard config
 const OPERATORS = [
-  { code:'AOR',           name:'Arithmetic Operator Replacement', eff:92, lvl:'High',     framework:'both', desc:'Replaces arithmetic operators (+,-,*,/,%). Example: a+b → a-b' },
-  { code:'ROR',           name:'Relational Operator Replacement', eff:88, lvl:'High',     framework:'both', desc:'Changes comparison operators (<,>,==,!=). Example: x<10 → x<=10' },
-  { code:'NEGATE_RETURN', name:'Negate Return Value',             eff:85, lvl:'High',     framework:'both', desc:'Negates boolean/primitive return values. Example: return true → return false' },
-  { code:'COR',           name:'Conditional Operator Replacement',eff:83, lvl:'High',     framework:'both', desc:'Removes or alters conditional expressions. Example: if(a&&b) → if(a)' },
-  { code:'UOI',           name:'Unary Operator Insertion',        eff:82, lvl:'High',     framework:'both', desc:'Adds/removes unary operators. Example: x → -x' },
-  { code:'ABS',           name:'Conditional Boundary Shift',      eff:76, lvl:'Moderate', framework:'java', desc:'Shifts boundary conditions. Example: if(x>10) → if(x>=10). Java/PIT only.' },
-  { code:'SDL',           name:'Statement Deletion',              eff:78, lvl:'Moderate', framework:'both', desc:'Deletes an entire statement or block.' },
-  { code:'LCR',           name:'Logical Connector Replacement',   eff:75, lvl:'Moderate', framework:'js',   desc:'Swaps logical connectors. Example: && → ||. JavaScript/Stryker only.' },
-  { code:'NULL_RETURN',   name:'Null/Empty Return Value',         eff:68, lvl:'Moderate', framework:'both', desc:'Replaces return values with null or empty equivalents. Example: return obj → return null' },
-  { code:'CRP',           name:'Constant Replacement',            eff:70, lvl:'Moderate', framework:'js',   desc:'Replaces string/regex constants. JavaScript/Stryker only.' },
+  { code:'ROR',           name:'Relational Operator Replacement', eff:80, lvl:'High',     framework:'both', desc:'Changes comparison operators (<,>,==,!=). Example: x<10 → x<=10' },
+  { code:'ABS',           name:'Conditional Boundary Shift',      eff:80, lvl:'High',     framework:'java', desc:'Shifts boundary conditions. Example: if(x>10) → if(x>=10). Java/PIT only.' },
+  { code:'NEGATE_RETURN', name:'Negate Return Value',             eff:75, lvl:'High',     framework:'both', desc:'Negates boolean/primitive return values. Example: return true → return false' },
+  { code:'COR',           name:'Conditional Operator Replacement',eff:75, lvl:'High',     framework:'both', desc:'Removes or alters conditional expressions. Example: if(a&&b) → if(a)' },
+  { code:'AOR',           name:'Arithmetic Operator Replacement', eff:72, lvl:'Moderate', framework:'both', desc:'Replaces arithmetic operators (+,-,*,/,%). Example: a+b → a-b' },
+  { code:'UOI',           name:'Unary Operator Insertion',        eff:70, lvl:'Moderate', framework:'both', desc:'Adds/removes unary operators. Example: x → -x' },
+  { code:'LCR',           name:'Logical Connector Replacement',   eff:65, lvl:'Moderate', framework:'js',   desc:'Swaps logical connectors. Example: && → ||. JavaScript/Stryker only.' },
+  { code:'NULL_RETURN',   name:'Null/Empty Return Value',         eff:60, lvl:'Moderate', framework:'both', desc:'Replaces return values with null or empty equivalents. Example: return obj → return null' },
+  { code:'CRP',           name:'Constant Replacement',            eff:55, lvl:'Moderate', framework:'js',   desc:'Replaces string/regex constants. JavaScript/Stryker only.' },
+  { code:'SDL',           name:'Statement Deletion',              eff:40, lvl:'Low',       framework:'both', desc:'Deletes an entire statement or block. Lower fault-detection rate per Just et al. (2014).' },
 ];
 
 // ── Step 1: Create session ─────────────────────────────────────
@@ -328,7 +332,7 @@ export function NewSessionOperators() {
               <div className="op-info">
                 <div className="op-name">
                   {op.code} — {op.name}
-                  <span className={`eff-tag ${op.lvl==='High'?'eff-high':'eff-med'}`}>
+                  <span className={`eff-tag ${op.lvl==='High'?'eff-high':op.lvl==='Low'?'eff-low':'eff-med'}`}>
                     {op.eff}% ({op.lvl} Effectiveness)
                   </span>
                   {op.framework !== 'both' && (

@@ -19,19 +19,24 @@ SECURITY_KEYWORDS = {
 # Literature-based defaults (used when DB is unavailable)
 # Sources: Andrews et al. 2005, Just et al. 2014, Papadakis et al. 2019
 LITERATURE_KILL_RATES: Dict[str, float] = {
-    # Operators actually produced by PIT (Java) and/or Stryker (JS)
-    # Sources: Andrews et al. 2005, Just et al. 2014, Papadakis et al. 2019
-    "AOR":           0.92,   # PIT + Stryker
-    "ROR":           0.88,   # PIT + Stryker
-    "NEGATE_RETURN": 0.85,   # PIT + Stryker
-    "COR":           0.83,   # PIT + Stryker
-    "UOI":           0.82,   # PIT + Stryker
-    "ABS":           0.76,   # PIT only
-    "SDL":           0.78,   # PIT + Stryker
-    "LCR":           0.75,   # Stryker only
-    "NULL_RETURN":   0.68,   # PIT + Stryker
-    "CRP":           0.70,   # Stryker only
-    # SOR/VDL/ODL omitted — not produced by PIT or Stryker in standard config
+    # Kill rates grounded in Just et al. (2014) — 357 real faults from Defects4J.
+    # ROR and ABS: directly cited (75-85% fault detection).
+    # SDL: directly cited (35-45% fault detection) — significantly lower than others.
+    # AOR, COR: derived from Just et al.'s fault distribution
+    #   (25% arithmetic, 60% conditional logic errors).
+    # UOI, LCR, NEGATE_RETURN, NULL_RETURN, CRP: estimates with no direct citation.
+    # These are labelled as initial defaults; the operator_stats table is updated
+    # from real run data after every completed session.
+    "ROR":           0.80,   # Empirical: Just et al. (2014), 75-85% fault detection
+    "ABS":           0.80,   # Empirical: Just et al. (2014), 75-85% fault detection
+    "NEGATE_RETURN": 0.75,   # Estimate (PIT ReturnValsMutator widely effective)
+    "COR":           0.75,   # Derived: Just et al. (2014), 60% of faults are conditional
+    "AOR":           0.72,   # Derived: Just et al. (2014), 25% of faults are arithmetic
+    "UOI":           0.70,   # Estimate: no direct citation
+    "LCR":           0.65,   # Estimate: no direct citation
+    "NULL_RETURN":   0.60,   # Estimate: no direct citation
+    "CRP":           0.55,   # Estimate: no direct citation
+    "SDL":           0.40,   # Empirical: Just et al. (2014), 35-45% fault detection
 }
 
 
