@@ -128,16 +128,16 @@ class StrykerAdapter:
         return "\n".join(lines) + "\n"
 
     def _ensure_config(self):
-        has_config = any([
-            (self.project_dir / "stryker.config.js").exists(),
-            (self.project_dir / "stryker.config.cjs").exists(),
-            (self.project_dir / ".strykerrc.json").exists(),
-        ])
-        if has_config:
-            return
+        # Always regenerate — old configs from failed runs may have wrong settings
+        for old_cfg in ["stryker.config.js", "stryker.config.cjs", ".strykerrc.json"]:
+            p = self.project_dir / old_cfg
+            if p.exists():
+                p.unlink()
+                log.info("Removed old config: %s", old_cfg)
         test_runner, test_command, is_esm, src_pattern = self._detect_project()
         config = self._build_config(test_runner, test_command, src_pattern)
-        name   = "stryker.config.cjs" if is_esm else "stryker.config.js"
+        # Always use .cjs — works for both ESM and CJS projects
+        name = "stryker.config.cjs"
         (self.project_dir / name).write_text(config)
         log.info("Generated %s: runner=%s src=%s esm=%s", name, test_runner, src_pattern, is_esm)
 
@@ -155,9 +155,11 @@ class StrykerAdapter:
 
     def _install_deps_docker(self):
         nm = self.project_dir / "node_modules"
-        if nm.exists() and any(nm.iterdir()):
-            log.info("node_modules exists, skipping install")
-            return
+        # Always reinstall — ensures deps match current config
+        if nm.exists():
+            import shutil
+            shutil.rmtree(nm)
+            log.info("Cleared old node_modules")
         log.info("Phase 1: npm install (network enabled)...")
         cmd = self._docker_base(network="bridge") + [
             "sh", "-c",
