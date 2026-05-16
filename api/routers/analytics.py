@@ -175,6 +175,7 @@ async def reports_stats(
     }
 
 
+@router.get("/compare/{session_id}")
 async def compare_strategies(
     session_id: str,
     current_user: User = Depends(get_current_user),
