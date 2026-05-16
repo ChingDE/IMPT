@@ -1,6 +1,7 @@
 """api/routers/analytics.py — Analytics and comparison endpoints."""
 from __future__ import annotations
 
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,7 @@ from db.database import get_db
 from db.models.orm_models import User
 from db.repositories.repositories import JobRepository, TestSessionRepository
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
@@ -182,10 +184,13 @@ async def compare_strategies(
     session_repo = TestSessionRepository(db)
     session      = await session_repo.get_by_id(session_id)
     if not session or session.owner_id != current_user.id:
+        log.warning("compare: session=%s not found or owner mismatch (session_owner=%s, user=%s)",
+                    session_id, session.owner_id if session else None, current_user.id)
         raise HTTPException(status_code=404, detail="Session not found")
 
     job_repo = JobRepository(db)
     jobs     = await job_repo.get_session_jobs(session_id)
+    log.info("compare: session=%s found %d jobs", session_id, len(jobs))
 
     if not jobs:
         raise HTTPException(status_code=404, detail="No jobs found for this session.")

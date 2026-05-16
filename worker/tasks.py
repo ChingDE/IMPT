@@ -494,6 +494,13 @@ def _get_all_mutants(config: dict, job_id: str):
                 test_count = adapter.count_tests()
             else:
                 adapter    = StrykerAdapter(p, use_docker=True)
+                # For exhaustive runs, clear any cached Phase 1 report so we
+                # re-enumerate fresh — prevents stale count from a prior IMPT run
+                if config.get("strategy") == "exhaustive":
+                    stale = adapter._find_report()
+                    if stale and stale.exists():
+                        stale.unlink()
+                        log.info("Cleared cached Phase 1 report for exhaustive re-enumeration")
                 mutants    = adapter.enumerate()
                 loc        = adapter.count_loc()
                 test_count = adapter.count_tests()
