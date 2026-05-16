@@ -18,6 +18,31 @@ log = logging.getLogger(__name__)
 
 # ── Synchronous DB helper (used in threads — no event loop needed) ────────────
 
+def _publish_progress(session_id: str, job_id: str, executed: int,
+                      killed: int, total: int, selected: int, strategy: str) -> None:
+    """Publish progress to Redis channel for WebSocket clients."""
+    try:
+        import redis as _redis
+        from config.settings import get_settings
+        settings = get_settings()
+        r = _redis.from_url(settings.REDIS_URL, decode_responses=True,
+                            socket_connect_timeout=2)
+        score = (killed / executed * 100) if executed > 0 else 0.0
+        r.publish(f"impt:session:{session_id}", __import__('json').dumps({
+            "type":     "progress",
+            "job_id":   job_id,
+            "strategy": strategy,
+            "executed": executed,
+            "killed":   killed,
+            "total":    total,
+            "selected": selected,
+            "score":    round(score, 1),
+        }))
+        r.close()
+    except Exception:
+        pass  # Redis publish is best-effort — never block mutation testing
+
+
 def _write_progress_sync(job_id: str, executed: int, killed: int,
                           total: int, selected: int) -> None:
     """Write progress directly using a synchronous DB connection."""
@@ -172,6 +197,25 @@ def _mark_completed_sync(job_id: str, result: dict, records: list) -> None:
             log.debug("Operator stats update failed (non-fatal): %s", ue)
 
         log.info("Job %s completed and saved.", job_id)
+    _publish_progress(
+        config.get("session_id",""), job_id,
+        len(result.executed_mutants), killed,
+        len(result.all_mutants), len(result.selected_mutants),
+        config.get("strategy","impt"),
+    )
+    # Signal completion to WebSocket clients
+    try:
+        import redis as _redis, json as _json
+        from config.settings import get_settings
+        r = _redis.from_url(get_settings().REDIS_URL, decode_responses=True,
+                            socket_connect_timeout=2)
+        r.publish(f"impt:session:{config.get('session_id','')}", _json.dumps({
+            "type": "job_complete", "job_id": job_id,
+            "strategy": config.get("strategy",""), "status": "COMPLETED",
+        }))
+        r.close()
+    except Exception:
+        pass
     except Exception as e:
         log.error("mark_completed failed: %s", e)
         _mark_failed_sync(job_id, str(e))
@@ -216,6 +260,8 @@ def _run_engine(job_id: str, config: dict) -> dict:
     from impt.models.project import MutationFramework, Project, ProjectConfig
     from impt.models.mutant import ExecutionStatus
     from impt.algorithms.optimization import SelectionStrategy
+    _session_id = config.get("session_id", "")
+    _strategy   = config.get("strategy", "impt")
 
     language  = config.get("language", "java").lower()
     fw        = MutationFramework.PIT if language == "java" else MutationFramework.STRYKER
@@ -259,6 +305,7 @@ def _run_engine(job_id: str, config: dict) -> dict:
 
     # Write initial total so UI shows "X of Y" immediately
     _write_progress_sync(job_id, 0, 0, len(all_mutants), 0)
+    _publish_progress(_session_id, job_id, 0, 0, len(all_mutants), 0, _strategy)
 
     # ── Phase 2: IMPT scores, reduces, and selects within budget ─────────────
     engine = IMPTEngine(project, config=ecfg)
@@ -285,6 +332,7 @@ def _run_engine(job_id: str, config: dict) -> dict:
 
     # Write selected count
     _write_progress_sync(job_id, 0, 0, len(all_mutants), len(selected))
+    _publish_progress(_session_id, job_id, 0, 0, len(all_mutants), len(selected), _strategy)
 
     # Apply strategy ordering
     strategy = config.get("strategy", "impt")
@@ -329,6 +377,7 @@ def _run_engine(job_id: str, config: dict) -> dict:
                     kill_count[0] += 1
         _write_progress_sync(job_id, exec_count[0], kill_count[0],
                               len(all_mutants), len(selected))
+        _publish_progress(_session_id, job_id, exec_count[0], kill_count[0], len(all_mutants), len(selected), _strategy)
     else:
         # Java or synthetic: use statistical simulation runner
         rng = random.Random(hash(job_id))
