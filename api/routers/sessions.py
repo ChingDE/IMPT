@@ -82,9 +82,30 @@ async def list_sessions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """FR044: List user's sessions sorted by last modified."""
-    repo = TestSessionRepository(db)
-    return await repo.get_user_sessions(current_user.id)
+    """FR044: List user's sessions sorted by last modified, with primary job metrics."""
+    from db.repositories.repositories import JobRepository
+    repo     = TestSessionRepository(db)
+    job_repo = JobRepository(db)
+    sessions = await repo.get_user_sessions(current_user.id)
+    all_jobs = await job_repo.get_user_jobs(current_user.id)
+
+    # Attach primary job metrics to each session
+    job_map = {}
+    for j in all_jobs:
+        if j.strategy != "exhaustive" and j.status == "COMPLETED":
+            if j.session_id not in job_map:
+                job_map[j.session_id] = j
+
+    result = []
+    for s in sessions:
+        job = job_map.get(s.id)
+        d = s.__dict__.copy()
+        d["mutation_score"]     = round((job.mutation_score or 0) * 100, 1) if job else None
+        d["executed_mutants"]   = job.executed_mutants if job else None
+        d["total_mutants"]      = job.total_mutants if job else None
+        d["time_saved_pct"]     = round(job.time_saved_pct or 0, 1) if job else None
+        result.append(d)
+    return result
 
 
 # ── Get session ────────────────────────────────────────────────────────────────
