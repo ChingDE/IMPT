@@ -47,7 +47,7 @@ export default function Dashboard() {
           <div className="stat-card green">
             <div className="stat-label">Total Time Saved</div>
             <div className="stat-value" style={{ fontSize: 22 }}>
-              {stats ? `${stats.time_saved_hours}h ${stats.time_saved_minutes}m` : '—'}
+              {stats ? stats.time_saved_display || '—' : '—'}
             </div>
             <div className="stat-delta text-green">vs exhaustive testing</div>
           </div>
