@@ -98,7 +98,7 @@ export default function Running() {
             if (l.some(x => x.msg && x.msg.includes('Exhaustive baseline still running'))) return l;
             return [...l, {
               t: new Date().toLocaleTimeString('en-US',{hour12:false}),
-              msg: '⏳ Primary strategy complete. Exhaustive baseline still running in background…',
+              msg: '⏳ Primary strategy complete. Waiting for exhaustive baseline to finish…',
               type: 'info', key: Date.now(),
             }];
           });
@@ -284,15 +284,18 @@ export default function Running() {
             </button>
           </div>
           {primaryOnlyDone && (
-            <div style={{ marginTop:12, padding:'12px 16px', background:'#FFFBEB',
-              border:'1px solid #FDE68A', borderRadius:8, fontSize:13 }}>
-              <strong>⏳ Exhaustive baseline still running</strong> — your primary strategy results
-              are ready. You can view them now (correlation will show as Estimated until exhaustive
-              completes), or wait for full Ground Truth comparison.
+            <div style={{ marginTop:12, padding:'12px 16px', background:'#EFF6FF',
+              border:'1px solid #BFDBFE', borderRadius:8, fontSize:13 }}>
+              <strong>⏳ Primary strategy complete — waiting for exhaustive baseline</strong>
+              <div style={{ marginTop:4, color:'var(--gray-600)', lineHeight:1.6 }}>
+                The exhaustive baseline is still running. The page will automatically redirect
+                to results with <strong>Ground Truth</strong> correlation once it finishes.
+                Please keep this page open.
+              </div>
               <div style={{ marginTop:8 }}>
-                <button className="btn btn-primary btn-sm"
+                <button className="btn btn-secondary btn-sm"
                   onClick={() => nav(`/results/${sessionId}`)}>
-                  View Results Now (Estimated)
+                  View Partial Results Now (Estimated)
                 </button>
               </div>
             </div>
