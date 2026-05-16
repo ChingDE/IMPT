@@ -8,14 +8,9 @@ import {
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 
-// ── Logo SVG ──────────────────────────────────────────────────────
-export const LogoMark = ({ size = 20, bg = '#7C3AED' }) => (
-  <div style={{ width: size*1.8, height: size*1.8, background: bg, borderRadius: 8, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
-      <polygon points="10,2 18,7 18,13 10,18 2,13 2,7" fill="rgba(255,255,255,0.85)" />
-      <polygon points="10,2 18,7 10,10 2,7" fill="#fff" />
-    </svg>
-  </div>
+// ── Logo ──────────────────────────────────────────────────────────
+export const LogoMark = ({ size = 36 }) => (
+  <img src="/logo.png" alt="IMPT Logo" style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }} />
 );
 
 // ── Sidebar ───────────────────────────────────────────────────────
