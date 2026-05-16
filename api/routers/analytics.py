@@ -27,20 +27,39 @@ async def dashboard_stats(
     jobs = await job_repo.get_user_jobs(current_user.id)
     completed = [j for j in jobs if j.status == "COMPLETED"]
 
-    total_time_saved_min = sum(
-        (j.time_saved_pct / 100) * (j.time_budget_seconds / 60)
-        for j in completed
-    )
-    hours_saved = int(total_time_saved_min // 60)
-    minutes_saved = int(total_time_saved_min % 60)
+    # Compute total time saved using actual timestamps
+    total_saved_secs = 0.0
+    for j in completed:
+        if j.strategy == "exhaustive":
+            continue  # skip exhaustive — it's the baseline not the saving
+        if j.started_at and j.completed_at:
+            actual_secs = (j.completed_at - j.started_at).total_seconds()
+        else:
+            actual_secs = j.execution_time_seconds or 0
+        # Estimate exhaustive would have taken: actual × (total/selected)
+        if actual_secs > 0 and (j.selected_mutants or 0) > 0 and (j.total_mutants or 0) > 0:
+            est_exhaustive = actual_secs * (j.total_mutants / j.selected_mutants)
+            total_saved_secs += max(0, est_exhaustive - actual_secs)
+
+    hours_saved   = int(total_saved_secs // 3600)
+    minutes_saved = int((total_saved_secs % 3600) // 60)
+    seconds_saved = int(total_saved_secs % 60)
+
+    if hours_saved:
+        display = f"{hours_saved}h {minutes_saved}m saved"
+    elif minutes_saved:
+        display = f"{minutes_saved}m {seconds_saved}s saved"
+    else:
+        display = f"{seconds_saved}s saved" if seconds_saved else "—"
 
     return {
         "total_sessions": total_sessions,
         "active_sessions": active_sessions,
         "completed_jobs": len(completed),
-        "time_saved_hours": hours_saved,
+        "time_saved_hours":   hours_saved,
         "time_saved_minutes": minutes_saved,
-        "time_saved_display": f"{hours_saved}h {minutes_saved}m saved" if hours_saved else f"{minutes_saved}m saved",
+        "time_saved_seconds": seconds_saved,
+        "time_saved_display": display,
     }
 
 
