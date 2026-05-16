@@ -359,6 +359,16 @@ class StrykerAdapter:
         return "\n".join(lines) + "\n"
 
     def _ensure_config(self, mutate_override=None):
+        # Check for a per-project IMPT override config (ships with FOSS clones).
+        # Lets us hardcode correct test runner for projects with unusual setups.
+        override_cfg = self.project_dir / "stryker.impt.config.cjs"
+        if override_cfg.exists() and not mutate_override:
+            test_runner, test_command, is_esm, src_pattern = self._detect_project()
+            name = "stryker.config.cjs" if is_esm else "stryker.config.js"
+            import shutil as _shutil
+            _shutil.copy2(str(override_cfg), str(self.project_dir / name))
+            log.info("Using FOSS override config: %s", override_cfg.name)
+            return
         # Always regenerate config
         for old_cfg in ["stryker.config.js", "stryker.config.cjs", ".strykerrc.json"]:
             p = self.project_dir / old_cfg
@@ -480,6 +490,16 @@ class StrykerAdapter:
 
 
     def _ensure_config(self, mutate_override=None):
+        # Check for a per-project IMPT override config (ships with FOSS clones).
+        # Lets us hardcode correct test runner for projects with unusual setups.
+        override_cfg = self.project_dir / "stryker.impt.config.cjs"
+        if override_cfg.exists() and not mutate_override:
+            test_runner, test_command, is_esm, src_pattern = self._detect_project()
+            name = "stryker.config.cjs" if is_esm else "stryker.config.js"
+            import shutil as _shutil
+            _shutil.copy2(str(override_cfg), str(self.project_dir / name))
+            log.info("Using FOSS override config: %s", override_cfg.name)
+            return
         # Always regenerate config
         for old_cfg in ["stryker.config.js", "stryker.config.cjs", ".strykerrc.json"]:
             p = self.project_dir / old_cfg
