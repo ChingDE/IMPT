@@ -76,12 +76,14 @@ export default function History() {
 
   const exportCSV = () => {
     const rows = [
-      ['Session Name','Language','Date','Mutation Score','Mutants Tested','Total Mutants','Strategy'],
+      ['Session Name','Language','Date','Mutation Score','Mutants Tested','Total Mutants','Strategy','Time Saved'],
       ...filtered.map(s => [
-        s.name, s.language,
+        s.name, s.language || '—',
         new Date(s.updated_at||s.created_at).toLocaleString(),
-        s.mutation_score ? ((s.mutation_score<=1?s.mutation_score*100:s.mutation_score).toFixed(1)+'%') : '—',
-        s.executed_mutants||'—', s.total_mutants||'—', s.selected_strategy||'—',
+        s.mutation_score != null ? `${s.mutation_score}%` : '—',
+        s.executed_mutants ?? '—', s.total_mutants ?? '—',
+        s.selected_strategy || '—',
+        s.time_saved_pct != null ? `${s.time_saved_pct}%` : '—',
       ])
     ];
     const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
@@ -89,6 +91,7 @@ export default function History() {
     a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
     a.download = `impt-test-history-${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
+    URL.revokeObjectURL(a.href);
   };
 
   return (

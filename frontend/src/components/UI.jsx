@@ -128,34 +128,30 @@ export function Sidebar() {
             onClick={() => { signOut(); nav('/login'); }}>
             Sign out
           </button>
+          <button onClick={() => setCollapsed(true)}
+            style={{ marginTop: 8, width: '100%', background: 'none', border: 'none',
+              cursor: 'pointer', color: 'var(--gray-400)', fontSize: 12,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '4px 0' }}>
+            <ChevronLeft size={13} /> Collapse
+          </button>
         </div>
       )}
       {collapsed && (
         <div style={{ padding: '12px 0', borderTop: '1px solid var(--gray-100)',
-          display: 'flex', justifyContent: 'center' }}>
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
           <button title="Sign out"
             onClick={() => { signOut(); nav('/login'); }}
             style={{ background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--gray-400)', fontSize: 18, padding: '6px' }}>
+              color: 'var(--gray-400)', padding: '6px' }}>
             ⏻
+          </button>
+          <button title="Expand sidebar" onClick={() => setCollapsed(false)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--gray-400)', padding: '4px', display: 'flex', alignItems: 'center' }}>
+            <ChevronRight size={15} />
           </button>
         </div>
       )}
-
-      {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed(c => !c)}
-        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        style={{
-          position: 'absolute', top: 20, right: -12,
-          width: 24, height: 24, borderRadius: '50%',
-          border: '1px solid var(--gray-200)', background: '#fff',
-          cursor: 'pointer', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
-          zIndex: 10, padding: 0, color: 'var(--gray-500)',
-        }}>
-        {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
-      </button>
     </div>
   );
 }
