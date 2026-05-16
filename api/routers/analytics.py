@@ -85,10 +85,18 @@ async def compare_strategies(
     exhaustive_job = next((j for j in jobs if j.strategy == "exhaustive"), None)
 
     # Compute real time-saved against exhaustive if both ran
-    def _elapsed(job):
-        if job and job.started_at and job.completed_at:
-            return (job.completed_at - job.started_at).total_seconds()
-        return job.execution_time_seconds or 0 if job else 0
+    def _elapsed(job) -> float:
+        if job is None:
+            return 0.0
+        try:
+            if job.started_at and job.completed_at:
+                delta = job.completed_at - job.started_at
+                secs = delta.total_seconds()
+                if secs > 0:
+                    return secs
+        except Exception:
+            pass
+        return float(job.execution_time_seconds or 0)
 
     primary_exec    = _elapsed(primary_job)
     exhaustive_exec = _elapsed(exhaustive_job)
@@ -123,10 +131,7 @@ async def compare_strategies(
         is_exhaustive = job.strategy == "exhaustive"
 
         # Compute real elapsed time from DB timestamps — most accurate source
-        if job.started_at and job.completed_at:
-            real_exec_secs = (job.completed_at - job.started_at).total_seconds()
-        else:
-            real_exec_secs = job.execution_time_seconds or 0
+        real_exec_secs = _elapsed(job)
         result[job.strategy] = {
             "id":                     job.id,
             "strategy":               job.strategy,
