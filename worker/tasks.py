@@ -195,8 +195,10 @@ def _mark_completed_sync(job_id: str, result: dict, records: list) -> None:
                 update_operator_stats(op_results)
         except Exception as ue:
             log.debug("Operator stats update failed (non-fatal): %s", ue)
+    except Exception as e:
+        log.error("mark_completed failed: %s", e)
 
-        log.info("Job %s completed and saved.", job_id)
+    log.info("Job %s completed and saved.", job_id)
     _publish_progress(
         config.get("session_id",""), job_id,
         len(result.executed_mutants), killed,
