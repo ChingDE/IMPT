@@ -22,8 +22,9 @@ write_config() {
 # ── ms (Jest) ─────────────────────────────────────────────────────────────────
 write_config "ms" "module.exports = {
   reporters: ['json'],
-  testRunner: 'jest',
-  coverageAnalysis: 'perTest',
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'npx jest --passWithNoTests' },
   mutate: ['index.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -32,8 +33,9 @@ write_config "ms" "module.exports = {
 # ── uuid (Jest) ───────────────────────────────────────────────────────────────
 write_config "uuid" "module.exports = {
   reporters: ['json'],
-  testRunner: 'jest',
-  coverageAnalysis: 'perTest',
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'npx jest --passWithNoTests' },
   mutate: ['src/**/*.js', '!src/**/*.test.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp', 'dist'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -42,8 +44,9 @@ write_config "uuid" "module.exports = {
 # ── dayjs (Jest) ──────────────────────────────────────────────────────────────
 write_config "dayjs" "module.exports = {
   reporters: ['json'],
-  testRunner: 'jest',
-  coverageAnalysis: 'perTest',
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'npx jest --passWithNoTests' },
   mutate: ['src/**/*.js', '!src/**/*.test.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -52,8 +55,9 @@ write_config "dayjs" "module.exports = {
 # ── mathjs (Jest) ─────────────────────────────────────────────────────────────
 write_config "mathjs" "module.exports = {
   reporters: ['json'],
-  testRunner: 'jest',
-  coverageAnalysis: 'perTest',
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'npx jest --passWithNoTests' },
   mutate: ['src/**/*.js', '!src/**/*.test.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -62,8 +66,9 @@ write_config "mathjs" "module.exports = {
 # ── validator-js (Jest) ───────────────────────────────────────────────────────
 write_config "validator-js" "module.exports = {
   reporters: ['json'],
-  testRunner: 'jest',
-  coverageAnalysis: 'perTest',
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'npx jest --passWithNoTests' },
   mutate: ['src/**/*.js', '!src/**/*.test.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -83,8 +88,9 @@ write_config "zod" "module.exports = {
 # ── axios (Jest) ──────────────────────────────────────────────────────────────
 write_config "axios" "module.exports = {
   reporters: ['json'],
-  testRunner: 'jest',
-  coverageAnalysis: 'perTest',
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'npx jest --passWithNoTests' },
   mutate: ['lib/**/*.js', '!lib/**/*.test.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -93,8 +99,9 @@ write_config "axios" "module.exports = {
 # ── date-fns (Jest) ───────────────────────────────────────────────────────────
 write_config "date-fns" "module.exports = {
   reporters: ['json'],
-  testRunner: 'jest',
-  coverageAnalysis: 'perTest',
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'npx jest --passWithNoTests' },
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -115,7 +122,8 @@ write_config "faker-js" "module.exports = {
 write_config "ramda" "module.exports = {
   reporters: ['json'],
   testRunner: 'mocha',
-  coverageAnalysis: 'perTest',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'npx jest --passWithNoTests' },
   mutate: ['source/**/*.js', '!source/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }

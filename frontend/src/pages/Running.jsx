@@ -13,9 +13,10 @@ export default function Running() {
   const nav = useNavigate();
   const logRef = useRef();
 
-  const [session, setSession]   = useState(null);
-  const [jobs, setJobs]         = useState([]);
-  const [elapsed, setElapsed]   = useState(0);
+  const [session, setSession]       = useState(null);
+  const [jobs, setJobs]             = useState([]);
+  const [elapsed, setElapsed]       = useState(0);
+  const [primaryOnlyDone, setPrimaryOnlyDone] = useState(false);
   const [logs, setLogs]         = useState([
     { t: new Date().toLocaleTimeString('en-US',{hour12:false}), msg: 'Initializing mutation testing engine…', type: 'running', key: 0 }
   ]);
@@ -70,8 +71,19 @@ export default function Running() {
           prevExec.current[job.id] = current;
         });
 
-        // Check if all done
-        const allDone = updated.length > 0 && updated.every(j => j.status === 'COMPLETED' || j.status === 'FAILED');
+        // Separate primary jobs from exhaustive job
+        const primaryJobs   = updated.filter(j => j.strategy !== 'exhaustive');
+        const exhaustiveJob = updated.find(j => j.strategy === 'exhaustive');
+
+        const primaryDone = primaryJobs.length > 0 &&
+          primaryJobs.every(j => j.status === 'COMPLETED' || j.status === 'FAILED');
+        const exhaustiveDone = !exhaustiveJob ||
+          exhaustiveJob.status === 'COMPLETED' || exhaustiveJob.status === 'FAILED';
+
+        const allDone = primaryDone && exhaustiveDone;
+        const primaryOnlyDone = primaryDone && exhaustiveJob &&
+          !exhaustiveDone;
+
         if (allDone) {
           clearInterval(pollRef.current);
           setLogs(l => [...l, {
@@ -80,6 +92,16 @@ export default function Running() {
             type: 'killed', key: Date.now(),
           }]);
           setTimeout(() => nav(`/results/${sessionId}`), 2000);
+        } else if (primaryOnlyDone) {
+          setPrimaryOnlyDone(true);
+          setLogs(l => {
+            if (l.some(x => x.msg && x.msg.includes('Exhaustive baseline still running'))) return l;
+            return [...l, {
+              t: new Date().toLocaleTimeString('en-US',{hour12:false}),
+              msg: '⏳ Primary strategy complete. Exhaustive baseline still running in background…',
+              type: 'info', key: Date.now(),
+            }];
+          });
         }
       } catch (e) {
         console.error('Poll error:', e);
@@ -261,6 +283,20 @@ export default function Running() {
               View Results
             </button>
           </div>
+          {primaryOnlyDone && (
+            <div style={{ marginTop:12, padding:'12px 16px', background:'#FFFBEB',
+              border:'1px solid #FDE68A', borderRadius:8, fontSize:13 }}>
+              <strong>⏳ Exhaustive baseline still running</strong> — your primary strategy results
+              are ready. You can view them now (correlation will show as Estimated until exhaustive
+              completes), or wait for full Ground Truth comparison.
+              <div style={{ marginTop:8 }}>
+                <button className="btn btn-primary btn-sm"
+                  onClick={() => nav(`/results/${sessionId}`)}>
+                  View Results Now (Estimated)
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </AppShell>
