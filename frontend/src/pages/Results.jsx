@@ -77,9 +77,21 @@ export default function Results() {
   const baselineColor   = hasGroundTruth ? 'var(--green)' : 'var(--amber)';
 
   // Time saved = 1 - (primary execution / exhaustive execution)
-  const primaryTimeSec    = primaryJob?.execution_time_seconds ?? 0;
+  // Primary execution time — from DB timestamps via API
+  const primaryTimeSec = primaryJob?.execution_time_seconds ?? 0;
   // exhaustiveTimeSec: real time if exhaustive ran, estimated otherwise
-  const exhaustiveTimeSec = primaryJob?.estimated_exhaustive_seconds ?? 0;
+  // Falls back to client-side estimate if API returns 0 (old sessions)
+  const exhaustiveTimeSec = (() => {
+    const apiVal = primaryJob?.estimated_exhaustive_seconds ?? 0;
+    if (apiVal > 0) return apiVal;
+    // Client-side estimate: primary_time × (total / selected)
+    const pSec = primaryJob?.execution_time_seconds ?? 0;
+    const sel  = primaryJob?.selected_mutants ?? primaryJob?.executed_mutants ?? 0;
+    const tot  = primaryJob?.total_mutants ?? 0;
+    if (pSec > 0 && sel > 0 && tot > 0) return pSec * (tot / sel);
+    // Last resort: use exhaustive job time if it ran
+    return exhaustiveJob?.execution_time_seconds ?? 0;
+  })();
   const exhaustiveTimeLabel = hasGroundTruth ? 'Ground Truth' : 'Estimated';
   const timeSavedPct = hasGroundTruth
     ? Math.round((1 - primaryTimeSec / exhaustiveTimeSec) * 100)
@@ -205,8 +217,24 @@ export default function Results() {
               {[
                 {l:'Mutation Score',   v:`${((primaryJob.mutation_score||0)*100).toFixed(1)}%`,  c:'var(--green)'},
                 {l:'Mutants Tested',  v:`${primaryJob.executed_mutants ?? primaryJob.mutants_tested} / ${primaryJob.total_mutants}`, c:'var(--amber)'},
-                {l:'Execution Time',  v:`${Math.round((primaryJob.execution_time_seconds??0)/60)} min`, c:'var(--blue)'}, 
-                {l:`Time Saved vs ${hasGroundTruth ? 'Exhaustive (Ground Truth)' : 'Exhaustive (Est.)'}`, v:`${timeSavedPct.toFixed(1)}%`, c:'var(--green)'},
+                {l:'Execution Time',
+                  v: (() => {
+                    const secs = primaryTimeSec;
+                    if (secs <= 0) return '—';
+                    if (secs < 60) return `${Math.round(secs)}s`;
+                    return `${Math.round(secs/60)} min`;
+                  })(),
+                  c:'var(--blue)'},
+                {l:`Time Saved vs ${hasGroundTruth ? 'Exhaustive (Ground Truth)' : 'Exhaustive (Est.)'}`,
+                  v: (() => {
+                    const savedSec = (exhaustiveTimeSec||0) - (primaryJob?.execution_time_seconds||0);
+                    const savedMin = Math.round(savedSec / 60);
+                    const pct = timeSavedPct.toFixed(1);
+                    if (savedMin > 0) return `${savedMin} min saved (${pct}%)`;
+                    if (savedSec > 0) return `${Math.round(savedSec)}s saved (${pct}%)`;
+                    return `${pct}%`;
+                  })(),
+                  c:'var(--green)'},
                 {l:`Exhaustive Score (${baselineLabel})`, v:`${((baselineScore||0)*100).toFixed(1)}%`, c:baselineColor},
                 {l:`Correlation (${baselineLabel})`, v: hasGroundTruth && typeof correlation === 'number' ? correlation.toFixed(2) : String(correlation), c: hasGroundTruth?'var(--green)':'var(--amber)'},
               ].map(({l,v,c})=>(
@@ -225,7 +253,10 @@ export default function Results() {
             {hasGroundTruth && (
               <div style={{marginTop:12,fontSize:12,color:'var(--green)',background:'var(--green-xlight)',border:'1px solid var(--green-light)',borderRadius:6,padding:'8px 12px'}}>
                 ✓ Exhaustive baseline ran — all figures are <strong>ground truth</strong>.
-                {hasGroundTruth ? `Exhaustive ran in ${Math.round((exhaustiveJob?.execution_time_seconds??0)/60)} min (ground truth)` : `Estimated exhaustive would take ~${Math.round(exhaustiveTimeSec/60)} min`} vs {Math.round((primaryJob?.execution_time_seconds??0)/60)} min for {STRATEGY_DISPLAY[primaryJob.strategy]||primaryJob.strategy}.
+                {hasGroundTruth
+                  ? `Exhaustive: ${Math.round((exhaustiveTimeSec||0)/60) < 1 ? '<1' : Math.round((exhaustiveTimeSec||0)/60)} min (ground truth)`
+                  : `Est. exhaustive: ~${Math.round((exhaustiveTimeSec||0)/60) < 1 ? '<1' : Math.round((exhaustiveTimeSec||0)/60)} min`
+                } vs {primaryTimeSec < 60 ? `${Math.round(primaryTimeSec)}s` : `${Math.round(primaryTimeSec/60)} min`} for {STRATEGY_DISPLAY[primaryJob.strategy]||primaryJob.strategy}.
               </div>
             )}
           </div>
