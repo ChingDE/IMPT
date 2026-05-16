@@ -20,6 +20,7 @@ import Running from './pages/Running';
 import Results from './pages/Results';
 import CompareResults from './pages/CompareResults';
 import History from './pages/History';
+import Reports from './pages/Reports';
 import Profile from './pages/Profile';
 import Help from './pages/Help';
 import { AdminDashboard, AdminUsers, AdminConfig, AdminLogs } from './pages/Admin';
@@ -91,8 +92,10 @@ export default function App() {
       <Route path="/sessions/:id/review" element={<ProtectedRoute><NewSessionReview /></ProtectedRoute>} />
       <Route path="/running/:sessionId"  element={<ProtectedRoute><Running /></ProtectedRoute>} />
       <Route path="/results/:sessionId"  element={<ProtectedRoute><Results /></ProtectedRoute>} />
+      <Route path="/compare"             element={<ProtectedRoute><CompareResults /></ProtectedRoute>} />
       <Route path="/compare/:sessionId"  element={<ProtectedRoute><CompareResults /></ProtectedRoute>} />
       <Route path="/history"             element={<ProtectedRoute><History /></ProtectedRoute>} />
+      <Route path="/reports"             element={<ProtectedRoute><Reports /></ProtectedRoute>} />
       <Route path="/profile"             element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="/help"                element={<ProtectedRoute><Help /></ProtectedRoute>} />
 

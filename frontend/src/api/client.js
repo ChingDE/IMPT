@@ -63,6 +63,7 @@ export const exportJobCSV    = (id) => client.get(`/api/jobs/${id}/export/csv`, 
 
 // ── Analytics ─────────────────────────────────────────────────────
 export const getDashboardStats  = ()    => client.get('/api/analytics/dashboard').then(r => r.data);
+export const getReportsStats    = ()    => client.get('/api/analytics/reports').then(r => r.data);
 export const getTrend           = ()    => client.get('/api/analytics/trend').then(r => r.data);
 export const compareStrategies  = (id)  => client.get(`/api/analytics/compare/${id}`).then(r => r.data);
 
