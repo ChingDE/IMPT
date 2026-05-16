@@ -19,95 +19,95 @@ write_config() {
     fi
 }
 
-# ── ms (Jest) ─────────────────────────────────────────────────────────────────
+# ── ms (Mocha — test script: mocha tests.js) ──────────────────────────────────
 write_config "ms" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'npx jest --passWithNoTests' },
-  mutate: ['index.js'],
+  commandRunner: { command: 'node_modules/.bin/mocha tests.js --exit' },
+  mutate: ['index.js', '!tests.js', '!test.js', '!*.config.*'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── uuid (Jest) ───────────────────────────────────────────────────────────────
+# ── uuid (Jest — test script: jest test/unit/) ────────────────────────────────
 write_config "uuid" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'npx jest --passWithNoTests' },
-  mutate: ['src/**/*.js', '!src/**/*.test.js'],
+  commandRunner: { command: 'node_modules/.bin/jest test/unit/ --passWithNoTests' },
+  mutate: ['src/**/*.js', '!src/**/*.test.js', '!src/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp', 'dist'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── dayjs (Jest) ──────────────────────────────────────────────────────────────
+# ── dayjs (Jest — test script: TZ=... jest) ──────────────────────────────────
 write_config "dayjs" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'npx jest --passWithNoTests' },
-  mutate: ['src/**/*.js', '!src/**/*.test.js'],
+  commandRunner: { command: 'node_modules/.bin/jest --passWithNoTests --testPathPattern=test/parse' },
+  mutate: ['src/**/*.js', '!src/**/*.test.js', '!src/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── mathjs (Jest) ─────────────────────────────────────────────────────────────
+# ── mathjs (Mocha — test script: npm run test:src) ───────────────────────────
 write_config "mathjs" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'npx jest --passWithNoTests' },
-  mutate: ['src/**/*.js', '!src/**/*.test.js'],
+  commandRunner: { command: 'node_modules/.bin/mocha --recursive test/unit --exit' },
+  mutate: ['src/**/*.js', '!src/**/*.test.js', '!src/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── validator-js (Jest) ───────────────────────────────────────────────────────
+# ── validator-js (Mocha — test script: nyc mocha --require @babel/register) ──
 write_config "validator-js" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'npx jest --passWithNoTests' },
-  mutate: ['src/**/*.js', '!src/**/*.test.js'],
+  commandRunner: { command: 'node_modules/.bin/mocha --require @babel/register --reporter dot --exit' },
+  mutate: ['src/**/*.js', '!src/**/*.test.js', '!src/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── zod (Vitest via command) ──────────────────────────────────────────────────
+# ── zod (Vitest — test script: yarn test:ts-jest) ────────────────────────────
 write_config "zod" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
   commandRunner: { command: 'node_modules/.bin/vitest run' },
-  mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
-  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
-  jsonReporter: { fileName: 'reports/mutation/mutation.json' }
-};"
-
-# ── axios (Jest) ──────────────────────────────────────────────────────────────
-write_config "axios" "module.exports = {
-  reporters: ['json'],
-  testRunner: 'command',
-  coverageAnalysis: 'off',
-  commandRunner: { command: 'npx jest --passWithNoTests' },
-  mutate: ['lib/**/*.js', '!lib/**/*.test.js'],
-  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
-  jsonReporter: { fileName: 'reports/mutation/mutation.json' }
-};"
-
-# ── date-fns (Jest) ───────────────────────────────────────────────────────────
-write_config "date-fns" "module.exports = {
-  reporters: ['json'],
-  testRunner: 'command',
-  coverageAnalysis: 'off',
-  commandRunner: { command: 'npx jest --passWithNoTests' },
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── faker-js (Vitest via command) ─────────────────────────────────────────────
+# ── axios (Mocha — test script: npm run test:mocha) ──────────────────────────
+write_config "axios" "module.exports = {
+  reporters: ['json'],
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'node_modules/.bin/mocha test/unit --recursive --exit' },
+  mutate: ['lib/**/*.js', '!lib/**/*.test.js', '!lib/**/*.spec.js'],
+  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
+  jsonReporter: { fileName: 'reports/mutation/mutation.json' }
+};"
+
+# ── date-fns (Vitest — test script: vitest run) ───────────────────────────────
+write_config "date-fns" "module.exports = {
+  reporters: ['json'],
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'node_modules/.bin/vitest run' },
+  mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts'],
+  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
+  jsonReporter: { fileName: 'reports/mutation/mutation.json' }
+};"
+
+# ── faker-js (Vitest — test script: vitest) ───────────────────────────────────
 write_config "faker-js" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
@@ -118,13 +118,13 @@ write_config "faker-js" "module.exports = {
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── ramda (Mocha) ─────────────────────────────────────────────────────────────
+# ── ramda (Mocha — test script: npm-run-all spec lint) ───────────────────────
 write_config "ramda" "module.exports = {
   reporters: ['json'],
-  testRunner: 'mocha',
+  testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'npx jest --passWithNoTests' },
-  mutate: ['source/**/*.js', '!source/**/*.spec.js'],
+  commandRunner: { command: 'node_modules/.bin/mocha --recursive source/__tests__ --exit' },
+  mutate: ['source/**/*.js', '!source/**/*.spec.js', '!source/**/*.test.js', '!source/__tests__/**'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
