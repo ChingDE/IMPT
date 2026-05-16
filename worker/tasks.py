@@ -199,28 +199,6 @@ def _mark_completed_sync(job_id: str, result: dict, records: list) -> None:
         log.error("mark_completed failed: %s", e)
 
     log.info("Job %s completed and saved.", job_id)
-    _publish_progress(
-        config.get("session_id",""), job_id,
-        len(result.executed_mutants), killed,
-        len(result.all_mutants), len(result.selected_mutants),
-        config.get("strategy","impt"),
-    )
-    # Signal completion to WebSocket clients
-    try:
-        import redis as _redis, json as _json
-        from config.settings import get_settings
-        r = _redis.from_url(get_settings().REDIS_URL, decode_responses=True,
-                            socket_connect_timeout=2)
-        r.publish(f"impt:session:{config.get('session_id','')}", _json.dumps({
-            "type": "job_complete", "job_id": job_id,
-            "strategy": config.get("strategy",""), "status": "COMPLETED",
-        }))
-        r.close()
-    except Exception:
-        pass
-    except Exception as e:
-        log.error("mark_completed failed: %s", e)
-        _mark_failed_sync(job_id, str(e))
 
 
 def _mark_failed_sync(job_id: str, error: str) -> None:
@@ -616,7 +594,27 @@ def run_mutation_job_sync(job_id: str, config: dict) -> dict:
         result  = _run_engine(job_id, config)
         records = result.pop("mutant_records", [])
         _mark_completed_sync(job_id, result, records)
-        # If this was an exhaustive job on a FOSS project, save as permanent baseline
+        # Publish completion to WebSocket clients
+        _publish_progress(
+            config.get("session_id",""), job_id,
+            result.get("executed_mutants", 0),
+            result.get("killed_mutants", 0),
+            result.get("total_mutants", 0),
+            result.get("selected_mutants", 0),
+            config.get("strategy","impt"),
+        )
+        try:
+            import redis as _redis, json as _json
+            from config.settings import get_settings
+            r = _redis.from_url(get_settings().REDIS_URL, decode_responses=True,
+                                socket_connect_timeout=2)
+            r.publish(f"impt:session:{config.get('session_id','')}", _json.dumps({
+                "type": "job_complete", "job_id": job_id,
+                "strategy": config.get("strategy",""), "status": "COMPLETED",
+            }))
+            r.close()
+        except Exception:
+            pass
         if config.get("strategy") == "exhaustive" and config.get("foss_project_id"):
             _save_exhaustive_baseline(config["foss_project_id"], result)
         return {**result, "mutant_records": records}
