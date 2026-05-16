@@ -78,11 +78,9 @@ export default function Results() {
 
   // Time saved = 1 - (primary execution / exhaustive execution)
   const primaryTimeSec    = primaryJob?.execution_time_seconds ?? 0;
-  const exhaustiveTimeSec = hasGroundTruth
-    ? (exhaustiveJob?.execution_time_seconds ?? 0)
-    : (primaryJob?.total_mutants > 0 && primaryJob?.executed_mutants > 0
-        ? primaryTimeSec * primaryJob.total_mutants / primaryJob.executed_mutants
-        : 0);
+  // exhaustiveTimeSec: real time if exhaustive ran, estimated otherwise
+  const exhaustiveTimeSec = primaryJob?.estimated_exhaustive_seconds ?? 0;
+  const exhaustiveTimeLabel = hasGroundTruth ? 'Ground Truth' : 'Estimated';
   const timeSavedPct = hasGroundTruth
     ? Math.round((1 - primaryTimeSec / exhaustiveTimeSec) * 100)
     : (primaryJob?.time_saved_pct ?? 0);
@@ -208,7 +206,7 @@ export default function Results() {
                 {l:'Mutation Score',   v:`${((primaryJob.mutation_score||0)*100).toFixed(1)}%`,  c:'var(--green)'},
                 {l:'Mutants Tested',  v:`${primaryJob.executed_mutants ?? primaryJob.mutants_tested} / ${primaryJob.total_mutants}`, c:'var(--amber)'},
                 {l:'Execution Time',  v:`${Math.round((primaryJob.execution_time_seconds??0)/60)} min`, c:'var(--blue)'}, 
-                {l:`Time Saved vs Exhaustive`, v:`${timeSavedPct}%`, c:'var(--green)'},
+                {l:`Time Saved vs ${hasGroundTruth ? 'Exhaustive (Ground Truth)' : 'Exhaustive (Est.)'}`, v:`${timeSavedPct.toFixed(1)}%`, c:'var(--green)'},
                 {l:`Exhaustive Score (${baselineLabel})`, v:`${((baselineScore||0)*100).toFixed(1)}%`, c:baselineColor},
                 {l:`Correlation (${baselineLabel})`, v: hasGroundTruth && typeof correlation === 'number' ? correlation.toFixed(2) : String(correlation), c: hasGroundTruth?'var(--green)':'var(--amber)'},
               ].map(({l,v,c})=>(
@@ -227,7 +225,7 @@ export default function Results() {
             {hasGroundTruth && (
               <div style={{marginTop:12,fontSize:12,color:'var(--green)',background:'var(--green-xlight)',border:'1px solid var(--green-light)',borderRadius:6,padding:'8px 12px'}}>
                 ✓ Exhaustive baseline ran — all figures are <strong>ground truth</strong>.
-                Exhaustive ran in {Math.round((exhaustiveJob.execution_time_seconds??0)/60)} min vs {Math.round((primaryJob.execution_time_seconds??0)/60)} min for {STRATEGY_DISPLAY[primaryJob.strategy]||primaryJob.strategy}.
+                {hasGroundTruth ? `Exhaustive ran in ${Math.round((exhaustiveJob?.execution_time_seconds??0)/60)} min (ground truth)` : `Estimated exhaustive would take ~${Math.round(exhaustiveTimeSec/60)} min`} vs {Math.round((primaryJob?.execution_time_seconds??0)/60)} min for {STRATEGY_DISPLAY[primaryJob.strategy]||primaryJob.strategy}.
               </div>
             )}
           </div>

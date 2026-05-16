@@ -85,11 +85,20 @@ async def compare_strategies(
     exhaustive_job = next((j for j in jobs if j.strategy == "exhaustive"), None)
 
     # Compute real time-saved against exhaustive if both ran
-    primary_exec   = (primary_job.execution_time_seconds or 0)   if primary_job   else 0
+    primary_exec    = (primary_job.execution_time_seconds or 0) if primary_job else 0
     exhaustive_exec = (exhaustive_job.execution_time_seconds or 0) if exhaustive_job else 0
 
-    if primary_exec > 0 and exhaustive_exec > 0:
-        real_time_saved = round((1 - primary_exec / exhaustive_exec) * 100, 1)
+    # If exhaustive didn't run (or ran but has 0 time), estimate it:
+    # estimated_exhaustive = primary_time × (total / selected)
+    # This reflects how long it would take to run ALL mutants at the same rate
+    if exhaustive_exec == 0 and primary_job and (primary_job.selected_mutants or 0) > 0:
+        ratio = (primary_job.total_mutants or 1) / (primary_job.selected_mutants or 1)
+        estimated_exhaustive_exec = primary_exec * ratio
+    else:
+        estimated_exhaustive_exec = exhaustive_exec
+
+    if primary_exec > 0 and estimated_exhaustive_exec > 0:
+        real_time_saved = round((1 - primary_exec / estimated_exhaustive_exec) * 100, 1)
     elif primary_job and (primary_job.time_saved_pct or 0) > 0:
         real_time_saved = round(primary_job.time_saved_pct, 1)
     else:
@@ -117,8 +126,9 @@ async def compare_strategies(
             "ci_lower":               job.ci_lower or 0,
             "ci_upper":               job.ci_upper or 0,
             # Timing
-            "execution_time_seconds": job.execution_time_seconds or 0,
-            "execution_time_min":     round((job.execution_time_seconds or 0) / 60, 1),
+            "execution_time_seconds":           job.execution_time_seconds or 0,
+            "execution_time_min":               round((job.execution_time_seconds or 0) / 60, 1),
+            "estimated_exhaustive_seconds":     estimated_exhaustive_exec if is_primary else (job.execution_time_seconds or 0),
             # Mutant counts
             "executed_mutants":       job.executed_mutants or 0,
             "selected_mutants":       job.selected_mutants or 0,
