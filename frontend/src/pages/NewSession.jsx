@@ -699,10 +699,51 @@ export function NewSessionReview() {
             <button className="btn btn-outline-gray btn-sm" onClick={()=>nav(`/sessions/${id}/budget`)}>✏ Edit Time Budget</button>
           </div>
 
-          <InfoBox>
-            <strong>⏱ Estimated duration:</strong> {session?.time_budget_minutes} minutes.
-            The test will run in the background — you can safely navigate away and return to check progress.
-          </InfoBox>
+          {/* Smart time estimate */}
+          {(() => {
+            const budget      = session?.time_budget_minutes || 20;
+            const loc         = session?.loc || 5000;
+            const opCount     = ops.length || 5;
+            const isJava      = session?.language === 'java';
+            const isExhaustive = session?.run_exhaustive;
+
+            // Base estimate: ~0.5s per mutant for JS (mocha), ~2s for Java (PIT)
+            // Rough mutant density: ~3 mutants per 10 LOC
+            const estMutants   = Math.round(loc * 0.3 * (opCount / 8));
+            const secPerMutant = isJava ? 2.5 : 0.8;
+            const rawExhaustive = Math.round(estMutants * secPerMutant / 60); // minutes
+            const strategy     = session?.selected_strategy || 'impt';
+            const reductionPct = strategy === 'impt' ? 0.65 : strategy === 'operator_based' ? 0.5 : 0.6;
+            const estPrimary   = Math.max(1, Math.round(rawExhaustive * (1 - reductionPct)));
+            const estTotal     = isExhaustive ? estPrimary + rawExhaustive : estPrimary;
+            const cappedPrimary = Math.min(estPrimary, budget);
+
+            const fmt = m => m < 1 ? '< 1 min' : m < 60 ? `~${m} min` : `~${(m/60).toFixed(1)} hr`;
+
+            return (
+              <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8,
+                padding:'12px 16px', marginBottom:16, fontSize:13, lineHeight:1.7 }}>
+                <div style={{ fontWeight:700, marginBottom:6 }}>⏱ Estimated Run Time</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 16px' }}>
+                  <span style={{ color:'var(--gray-600)' }}>Estimated mutants:</span>
+                  <span style={{ fontWeight:600 }}>{estMutants.toLocaleString()}</span>
+                  <span style={{ color:'var(--gray-600)' }}>Strategy run ({strategy.toUpperCase()}):</span>
+                  <span style={{ fontWeight:600, color:'var(--purple-mid)' }}>{fmt(cappedPrimary)}</span>
+                  {isExhaustive && <>
+                    <span style={{ color:'var(--gray-600)' }}>Exhaustive baseline:</span>
+                    <span style={{ fontWeight:600, color:'var(--amber)' }}>{fmt(rawExhaustive)}</span>
+                  </>}
+                  <span style={{ color:'var(--gray-600)', fontWeight:600 }}>Total estimated:</span>
+                  <span style={{ fontWeight:700, color:'var(--green)' }}>{fmt(Math.min(estTotal, budget + (isExhaustive ? rawExhaustive : 0)))}</span>
+                </div>
+                <div style={{ fontSize:11, color:'var(--gray-500)', marginTop:6 }}>
+                  Estimates based on {loc?.toLocaleString() || '?'} LOC × {opCount} operators.
+                  Actual time may vary depending on test suite speed.
+                  {isExhaustive && ' Exhaustive baseline runs after the primary strategy completes.'}
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="flex justify-between mt-4">
             <button className="btn btn-secondary" onClick={()=>nav(`/sessions/${id}/budget`)}>← Back</button>
