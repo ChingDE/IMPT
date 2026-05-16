@@ -1,128 +1,125 @@
 #!/bin/bash
 # scripts/setup_foss_stryker_configs.sh
-# Creates stryker.impt.config.cjs for each FOSS project that needs
-# a non-standard test runner configuration.
-# Run once on the Droplet after cloning.
+# Creates stryker.impt.config.cjs for each FOSS JS project.
+# Run on the Droplet after cloning. Also copies to foss-tmp if present.
 
 FOSS_DIR="${HOME}/impt/foss"
+TMP_DIR="${HOME}/impt/foss-tmp"
 
 write_config() {
     local slug="$1"
     local config="$2"
-    local dest="$FOSS_DIR/$slug/stryker.impt.config.cjs"
     if [ -d "$FOSS_DIR/$slug" ]; then
-        echo "$config" > "$dest"
-        echo "[$slug] Written stryker.impt.config.cjs"
-    else
-        echo "[$slug] Directory not found — skipping"
+        echo "$config" > "$FOSS_DIR/$slug/stryker.impt.config.cjs"
+        echo "[$slug] Written to foss/$slug"
+    fi
+    if [ -d "$TMP_DIR/$slug" ]; then
+        echo "$config" > "$TMP_DIR/$slug/stryker.impt.config.cjs"
+        echo "[$slug] Copied to foss-tmp/$slug"
     fi
 }
 
-# ── chalk (ESM, uses ava + xo — TTY-dependent, use node runner) ──────────────
-write_config "chalk" "module.exports = {
-  reporters: ['json'],
-  testRunner: 'command',
-  coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/ava' },
-  mutate: ['source/**/*.js'],
-  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
-  jsonReporter: { fileName: 'reports/mutation/mutation.json' }
-};"
-
-# ── ms (ESM, uses jest) ───────────────────────────────────────────────────────
+# ── ms (Jest) ─────────────────────────────────────────────────────────────────
 write_config "ms" "module.exports = {
   reporters: ['json'],
   testRunner: 'jest',
   coverageAnalysis: 'perTest',
-  mutate: ['index.js', 'src/**/*.js'],
+  mutate: ['index.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── uuid (ESM, uses jest) ─────────────────────────────────────────────────────
+# ── uuid (Jest) ───────────────────────────────────────────────────────────────
 write_config "uuid" "module.exports = {
   reporters: ['json'],
   testRunner: 'jest',
   coverageAnalysis: 'perTest',
-  mutate: ['src/**/*.js', 'src/**/*.ts'],
+  mutate: ['src/**/*.js', '!src/**/*.test.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp', 'dist'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── dayjs (uses jest) ─────────────────────────────────────────────────────────
+# ── dayjs (Jest) ──────────────────────────────────────────────────────────────
 write_config "dayjs" "module.exports = {
   reporters: ['json'],
   testRunner: 'jest',
   coverageAnalysis: 'perTest',
-  mutate: ['src/**/*.js'],
+  mutate: ['src/**/*.js', '!src/**/*.test.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── validator-js (uses jest) ──────────────────────────────────────────────────
+# ── mathjs (Jest) ─────────────────────────────────────────────────────────────
+write_config "mathjs" "module.exports = {
+  reporters: ['json'],
+  testRunner: 'jest',
+  coverageAnalysis: 'perTest',
+  mutate: ['src/**/*.js', '!src/**/*.test.js'],
+  ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
+  jsonReporter: { fileName: 'reports/mutation/mutation.json' }
+};"
+
+# ── validator-js (Jest) ───────────────────────────────────────────────────────
 write_config "validator-js" "module.exports = {
   reporters: ['json'],
   testRunner: 'jest',
   coverageAnalysis: 'perTest',
-  mutate: ['src/**/*.js'],
+  mutate: ['src/**/*.js', '!src/**/*.test.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── lodash (uses jest) ────────────────────────────────────────────────────────
-write_config "lodash" "module.exports = {
+# ── zod (Vitest via command) ──────────────────────────────────────────────────
+write_config "zod" "module.exports = {
   reporters: ['json'],
-  testRunner: 'jest',
-  coverageAnalysis: 'perTest',
-  mutate: ['lodash.js', 'src/**/*.js'],
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'node_modules/.bin/vitest run' },
+  mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── axios (uses jest) ─────────────────────────────────────────────────────────
+# ── axios (Jest) ──────────────────────────────────────────────────────────────
 write_config "axios" "module.exports = {
   reporters: ['json'],
   testRunner: 'jest',
   coverageAnalysis: 'perTest',
-  mutate: ['lib/**/*.js'],
+  mutate: ['lib/**/*.js', '!lib/**/*.test.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── date-fns (uses jest) ──────────────────────────────────────────────────────
+# ── date-fns (Jest) ───────────────────────────────────────────────────────────
 write_config "date-fns" "module.exports = {
   reporters: ['json'],
   testRunner: 'jest',
   coverageAnalysis: 'perTest',
-  mutate: ['src/**/*.ts', 'src/**/*.js'],
+  mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── luxon (uses jest) ─────────────────────────────────────────────────────────
-write_config "luxon" "module.exports = {
+# ── faker-js (Vitest via command) ─────────────────────────────────────────────
+write_config "faker-js" "module.exports = {
   reporters: ['json'],
-  testRunner: 'jest',
-  coverageAnalysis: 'perTest',
-  mutate: ['src/**/*.js'],
+  testRunner: 'command',
+  coverageAnalysis: 'off',
+  commandRunner: { command: 'node_modules/.bin/vitest run' },
+  mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── yargs (uses jest/mocha) ───────────────────────────────────────────────────
-write_config "yargs" "module.exports = {
+# ── ramda (Mocha) ─────────────────────────────────────────────────────────────
+write_config "ramda" "module.exports = {
   reporters: ['json'],
   testRunner: 'mocha',
   coverageAnalysis: 'perTest',
-  mutate: ['lib/**/*.js', 'lib/**/*.cjs'],
+  mutate: ['source/**/*.js', '!source/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
 echo ""
-echo "Done. Also copy configs to foss-tmp if it exists:"
-for slug in chalk ms uuid dayjs validator-js lodash axios date-fns luxon yargs; do
-    if [ -d "${HOME}/impt/foss-tmp/$slug" ]; then
-        cp "$FOSS_DIR/$slug/stryker.impt.config.cjs" "${HOME}/impt/foss-tmp/$slug/" 2>/dev/null && echo "  Copied to foss-tmp/$slug"
-    fi
-done
+echo "Done. Stryker override configs written for all 10 JS projects."
