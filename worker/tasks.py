@@ -446,7 +446,7 @@ def _run_engine(job_id: str, config: dict) -> dict:
         "ci_upper":                   result.estimate.upper_bound     if result.estimate else 0.0,
         "time_saved_pct":             result.time_saved_pct,
         "subsumption_reduction_pct":  result.subsumption_reduction_pct,
-        "execution_time_seconds":     time.time() - phase3_start,  # actual wall-clock time
+        "execution_time_seconds":     result.total_execution_time,
         "result_json":                {"operator_stats": result.operator_stats,
                                        "summary": result.summary()},
         "mutant_records":             records,

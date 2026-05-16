@@ -85,8 +85,13 @@ async def compare_strategies(
     exhaustive_job = next((j for j in jobs if j.strategy == "exhaustive"), None)
 
     # Compute real time-saved against exhaustive if both ran
-    primary_exec    = (primary_job.execution_time_seconds or 0) if primary_job else 0
-    exhaustive_exec = (exhaustive_job.execution_time_seconds or 0) if exhaustive_job else 0
+    def _elapsed(job):
+        if job and job.started_at and job.completed_at:
+            return (job.completed_at - job.started_at).total_seconds()
+        return job.execution_time_seconds or 0 if job else 0
+
+    primary_exec    = _elapsed(primary_job)
+    exhaustive_exec = _elapsed(exhaustive_job)
 
     # If exhaustive didn't run (or ran but has 0 time), estimate it:
     # estimated_exhaustive = primary_time × (total / selected)
@@ -116,6 +121,12 @@ async def compare_strategies(
     for job in jobs:
         is_primary    = job.strategy != "exhaustive"
         is_exhaustive = job.strategy == "exhaustive"
+
+        # Compute real elapsed time from DB timestamps — most accurate source
+        if job.started_at and job.completed_at:
+            real_exec_secs = (job.completed_at - job.started_at).total_seconds()
+        else:
+            real_exec_secs = job.execution_time_seconds or 0
         result[job.strategy] = {
             "id":                     job.id,
             "strategy":               job.strategy,
@@ -126,9 +137,10 @@ async def compare_strategies(
             "ci_lower":               job.ci_lower or 0,
             "ci_upper":               job.ci_upper or 0,
             # Timing
-            "execution_time_seconds":           job.execution_time_seconds or 0,
-            "execution_time_min":               round((job.execution_time_seconds or 0) / 60, 1),
-            "estimated_exhaustive_seconds":     estimated_exhaustive_exec if is_primary else (job.execution_time_seconds or 0),
+            # Timing — derived from DB timestamps, not stored estimate
+            "execution_time_seconds":           real_exec_secs,
+            "execution_time_min":               round(real_exec_secs / 60, 1),
+            "estimated_exhaustive_seconds":     estimated_exhaustive_exec if is_primary else real_exec_secs,
             # Mutant counts
             "executed_mutants":       job.executed_mutants or 0,
             "selected_mutants":       job.selected_mutants or 0,
