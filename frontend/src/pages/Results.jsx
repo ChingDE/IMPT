@@ -24,6 +24,9 @@ export default function Results() {
   const [sortDir, setSortDir]     = useState('desc');
   const [page, setPage]           = useState(1);
   const [expandedId, setExpandedId] = useState(null);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [showAllMutants, setShowAllMutants] = useState(false);
+  const [survivedOnly, setSurvivedOnly] = useState(false);
   const [shareUrl, setShareUrl]   = useState('');
   const [shareErr, setShareErr]   = useState('');
   const [loading, setLoading]     = useState(true);
@@ -54,6 +57,14 @@ export default function Results() {
         const exhaustive = allJobs.find(j => j.strategy === 'exhaustive');
         if (exhaustive && exhaustive.status?.toUpperCase() !== 'COMPLETED' && exhaustive.status?.toUpperCase() !== 'FAILED') {
           pollRef.current = setInterval(loadJobs, 10000); // poll every 10s
+        }
+        // Load mutant records from primary job
+        const primary = allJobs.find(j => j.strategy !== 'exhaustive') || allJobs[0];
+        if (primary?.id) {
+          try {
+            const recs = await getJobMutants(primary.id);
+            setMutants(recs.sort((a,b) => (b.priority_score||0) - (a.priority_score||0)));
+          } catch {}
         }
       } catch {}
       setLoading(false);
@@ -307,6 +318,151 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
             ⏳ Exhaustive baseline is still running ({exhaustiveJob.status}). Refresh to update ground-truth figures.
           </Alert>
         )}
+
+        {/* Collapsible explanation */}
+        <div className="card mb-4">
+          <button
+            style={{ display:'flex',justifyContent:'space-between',alignItems:'center',
+              width:'100%',background:'none',border:'none',cursor:'pointer',padding:0 }}
+            onClick={() => setShowExplanation(s => !s)}>
+            <div className="card-title" style={{margin:0}}>📖 Understanding Your Results</div>
+            <span style={{fontSize:18,color:'var(--gray-400)'}}>{showExplanation ? '▲' : '▼'}</span>
+          </button>
+          {showExplanation && (
+            <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:16}}>
+              {[
+                {
+                  label: 'Mutation Score',
+                  value: `${((primaryJob?.mutation_score||0)*100).toFixed(1)}%`,
+                  badge: (primaryJob?.mutation_score||0) >= 0.8 ? ['Good Coverage','var(--green)'] :
+                         (primaryJob?.mutation_score||0) >= 0.6 ? ['Fair Coverage','var(--amber)'] :
+                         ['Needs Improvement','var(--red)'],
+                  what: `Your test suite killed ${primaryJob?.killed_mutants||0} out of ${primaryJob?.executed_mutants||0} mutants tested. A higher score means your tests detect more bugs.`,
+                  industry: 'Research: 60–70% · Web apps: 70–80% · Mission-critical: 85%+',
+                },
+                {
+                  label: 'Correlation',
+                  value: String(correlation),
+                  badge: parseFloat(correlation) >= 0.95 ? ['High Confidence','var(--green)'] :
+                         parseFloat(correlation) >= 0.85 ? ['Good','var(--amber)'] :
+                         ['Moderate','var(--red)'],
+                  what: hasGroundTruth
+                    ? `IMPT's results are ${(parseFloat(correlation)*100).toFixed(0)}% similar to running ALL ${primaryJob?.total_mutants||0} mutants. It found most of the same bugs exhaustive testing would, at a fraction of the cost.`
+                    : `Estimated correlation based on Wilson confidence interval. Run with Exhaustive Baseline enabled for ground-truth correlation.`,
+                  industry: '≥0.95: High confidence · 0.90–0.94: Good · 0.85–0.89: Moderate · <0.85: Low',
+                },
+                {
+                  label: 'Mutants Tested',
+                  value: `${primaryJob?.executed_mutants||0} / ${primaryJob?.total_mutants||0}`,
+                  badge: [`${(((primaryJob?.executed_mutants||0)/(primaryJob?.total_mutants||1))*100).toFixed(0)}% Sample`,'var(--purple-mid)'],
+                  what: `IMPT intelligently selected ${primaryJob?.executed_mutants||0} high-priority mutants from ${primaryJob?.total_mutants||0} total. Subsumption analysis removed ${((primaryJob?.total_mutants||0)-(primaryJob?.selected_mutants||primaryJob?.executed_mutants||0))} redundant mutants before selection.`,
+                  industry: '15–40%: Excellent efficiency · 40–60%: Good · >60%: Consider larger budget',
+                },
+                {
+                  label: 'Time Saved',
+                  value: `${timeSavedPct.toFixed(1)}%`,
+                  badge: timeSavedPct >= 50 ? ['Excellent','var(--green)'] :
+                         timeSavedPct >= 25 ? ['Good','var(--amber)'] :
+                         ['Fair','var(--gray-500)'],
+                  what: `IMPT completed testing ${timeSavedPct.toFixed(0)}% faster than running all ${primaryJob?.total_mutants||0} mutants exhaustively. ${hasGroundTruth ? `Actual exhaustive: ${Math.round((exhaustiveTimeSec||0))}s vs IMPT: ${Math.round((primaryTimeSec||0))}s.` : 'Based on estimated exhaustive time.'}`,
+                  industry: '>75%: Excellent · 50–75%: Good · 25–50%: Fair · <25%: Consider fewer operators',
+                },
+              ].map(({label,value,badge,what,industry}) => (
+                <div key={label} style={{borderLeft:'3px solid var(--purple-mid)',paddingLeft:12}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                    <strong style={{fontSize:14}}>{label} ({value})</strong>
+                    <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:999,
+                      background: badge[1]+'22', color:badge[1]}}>{badge[0]}</span>
+                  </div>
+                  <div style={{fontSize:13,color:'var(--gray-700)',marginBottom:4,lineHeight:1.6}}>{what}</div>
+                  <div style={{fontSize:11,color:'var(--gray-500)'}}>Industry: {industry}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Prioritized Mutants Table */}
+        <div className="card mb-4">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <div className="card-title" style={{margin:0}}>
+              🎯 Prioritized Mutants ({mutants.length})
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button className={`btn btn-sm ${!survivedOnly?'btn-primary':'btn-secondary'}`}
+                onClick={()=>setSurvivedOnly(false)}>All</button>
+              <button className={`btn btn-sm ${survivedOnly?'btn-primary':'btn-secondary'}`}
+                onClick={()=>setSurvivedOnly(true)}>
+                ✗ Survived ({mutants.filter(m=>m.status==='SURVIVED').length})
+              </button>
+            </div>
+          </div>
+          <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:12}}>
+            Sorted by IMPT priority score (highest first). &nbsp;
+            <span style={{color:'var(--green)',fontWeight:600}}>● Killed</span> = test detected the bug &nbsp;
+            <span style={{color:'var(--red)',fontWeight:600}}>● Survived</span> = test gap — needs attention
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={{width:40}}>#</th>
+                <th>Operator</th>
+                <th>File</th>
+                <th style={{width:60}}>Line</th>
+                <th style={{width:80}}>Priority</th>
+                <th style={{width:100}}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(showAllMutants
+                ? mutants.filter(m => !survivedOnly || m.status === 'SURVIVED')
+                : mutants.filter(m => !survivedOnly || m.status === 'SURVIVED').slice(0, 10)
+              ).map((m, i) => (
+                <tr key={m.mutant_hash || i}>
+                  <td style={{color:'var(--gray-400)',fontSize:12}}>{i+1}</td>
+                  <td><span className="badge badge-blue">{m.operator||'—'}</span></td>
+                  <td style={{fontSize:12,color:'var(--gray-600)',maxWidth:200,
+                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    {m.file ? m.file.split('/').pop() : '—'}
+                  </td>
+                  <td style={{fontSize:12}}>{m.line||'—'}</td>
+                  <td>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <div style={{flex:1,background:'var(--gray-200)',height:4,borderRadius:2}}>
+                        <div style={{width:`${Math.min(100,(m.priority_score||0)*10)}%`,
+                          height:'100%',background:'var(--purple-mid)',borderRadius:2}}/>
+                      </div>
+                      <span style={{fontSize:11,minWidth:28}}>{(m.priority_score||0).toFixed(1)}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span style={{fontWeight:700,fontSize:12,
+                      color: m.status==='KILLED' ? 'var(--green)' :
+                             m.status==='SURVIVED' ? 'var(--red)' : 'var(--gray-500)'}}>
+                      {m.status==='KILLED' ? '● KILLED' :
+                       m.status==='SURVIVED' ? '● SURVIVED' : m.status||'—'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {mutants.length === 0 && (
+                <tr><td colSpan={6} style={{textAlign:'center',color:'var(--gray-400)',padding:20}}>
+                  No mutant records available
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+          {mutants.filter(m => !survivedOnly || m.status==='SURVIVED').length > 10 && (
+            <div style={{marginTop:12,textAlign:'center'}}>
+              <button className="btn btn-secondary btn-sm"
+                onClick={()=>setShowAllMutants(s=>!s)}>
+                {showAllMutants
+                  ? '▲ Show Top 10 Only'
+                  : `▼ Show All ${mutants.filter(m=>!survivedOnly||m.status==='SURVIVED').length} Mutants`}
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* FR109 — Prioritization factors (only for IMPT strategy) */}
         {primaryJob?.strategy === 'impt' && (
