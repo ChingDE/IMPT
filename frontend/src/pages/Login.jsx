@@ -1,12 +1,14 @@
 // src/pages/Login.jsx  FR001–FR010
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { login } from '../api/client';
 import { Alert, LogoMark } from '../components/UI';
 
 export default function Login() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
+  const reason = searchParams.get('reason');
   const { signIn } = useAuth();
   const [form, setForm]     = useState({ email: '', password: '', remember: false });
   const [error, setError]   = useState('');
@@ -52,6 +54,11 @@ export default function Login() {
           </div>
         </div>
 
+        {reason === 'unverified' && (
+          <Alert type="warn">
+            ⚠ Your account email is not yet verified. Please check your inbox for the verification link, then log in again.
+          </Alert>
+        )}
         {error && <Alert type={locked ? 'error' : attempts > 0 ? 'warn' : 'error'}>{error}</Alert>}
 
         <form onSubmit={handleSubmit}>
