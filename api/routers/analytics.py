@@ -81,7 +81,98 @@ async def score_trend(
     ]
 
 
-@router.get("/compare/{session_id}")
+@router.get("/reports")
+async def reports_stats(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Aggregate stats for the Results & Reports page."""
+    from sqlalchemy import select
+    from db.models.orm_models import MutationJob, TestSession
+
+    session_repo = TestSessionRepository(db)
+    job_repo     = JobRepository(db)
+
+    sessions = await session_repo.get_user_sessions(current_user.id)
+    all_jobs  = await job_repo.get_user_jobs(current_user.id)
+    primary_jobs = [j for j in all_jobs if j.status == "COMPLETED" and j.strategy != "exhaustive"]
+
+    total_sessions  = len(sessions)
+    completed_sessions = [s for s in sessions if s.status == "completed"]
+
+    # Avg mutation score
+    scores = [j.mutation_score for j in primary_jobs if j.mutation_score]
+    avg_score = (sum(scores) / len(scores)) if scores else 0
+
+    # Avg execution time (seconds)
+    times = []
+    for j in primary_jobs:
+        if j.started_at and j.completed_at:
+            times.append((j.completed_at - j.started_at).total_seconds())
+        elif j.execution_time_seconds:
+            times.append(j.execution_time_seconds)
+    avg_time_secs = (sum(times) / len(times)) if times else 0
+
+    # Unique projects tested
+    projects = set()
+    for s in completed_sessions:
+        projects.add(s.foss_project_id or s.upload_filename or s.name)
+
+    # Trend: last 10 completed jobs by date with score
+    trend_jobs = sorted(
+        [j for j in primary_jobs if j.completed_at and j.mutation_score],
+        key=lambda j: j.completed_at
+    )[-10:]
+    trend = [
+        {
+            "date": j.completed_at.strftime("%b %d"),
+            "score": round(j.mutation_score * 100, 1),
+            "session_id": j.session_id,
+        }
+        for j in trend_jobs
+    ]
+
+    # Score distribution buckets
+    dist = {"excellent": 0, "good": 0, "average": 0, "poor": 0}
+    for j in primary_jobs:
+        s = (j.mutation_score or 0) * 100
+        if s >= 85:   dist["excellent"] += 1
+        elif s >= 70: dist["good"]      += 1
+        elif s >= 55: dist["average"]   += 1
+        else:         dist["poor"]      += 1
+
+    # Recent sessions with job data
+    recent = []
+    for s in sorted(completed_sessions, key=lambda x: x.updated_at or x.created_at, reverse=True)[:5]:
+        job = next((j for j in primary_jobs if j.session_id == s.id), None)
+        if not job: continue
+        elapsed = 0
+        if job.started_at and job.completed_at:
+            elapsed = (job.completed_at - job.started_at).total_seconds()
+        recent.append({
+            "session_id":    s.id,
+            "name":          s.name,
+            "language":      s.language,
+            "completed_at":  s.updated_at.isoformat() if s.updated_at else "",
+            "mutation_score": round((job.mutation_score or 0) * 100, 1),
+            "executed_mutants": job.executed_mutants or 0,
+            "total_mutants":    job.total_mutants or 0,
+            "execution_secs":   round(elapsed),
+            "strategy":         job.strategy or "",
+            "time_saved_pct":   round(job.time_saved_pct or 0, 1),
+        })
+
+    return {
+        "total_tests":    total_sessions,
+        "avg_score":      round(avg_score * 100, 1),
+        "avg_time_secs":  round(avg_time_secs),
+        "projects_tested": len(projects),
+        "trend":          trend,
+        "distribution":   dist,
+        "recent":         recent,
+    }
+
+
 async def compare_strategies(
     session_id: str,
     current_user: User = Depends(get_current_user),

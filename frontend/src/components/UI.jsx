@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Home, PlayCircle, BarChart2, Settings, Clock, Save, HelpCircle,
+  TrendingUp, History, GitCompare,
   User, Shield, Info, CheckCircle, XCircle, AlertTriangle, X
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -22,7 +23,9 @@ export function Sidebar() {
   const navItems = [
     { path: '/dashboard',   label: 'Dashboard',         icon: Home },
     { path: '/new-session', label: 'New Test Session',  icon: PlayCircle },
-    { path: '/history',     label: 'Results & Reports', icon: BarChart2 },
+    { path: '/reports',     label: 'Results & Reports', icon: TrendingUp },
+    { path: '/history',     label: 'Test History',      icon: History },
+    { path: '/compare',     label: 'Compare Results',   icon: GitCompare },
     { path: '/help',        label: 'Help & Docs',       icon: HelpCircle },
   ];
 

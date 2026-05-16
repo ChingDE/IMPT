@@ -1,153 +1,289 @@
-// src/pages/CompareResults.jsx — Side-by-side session viewer
+// src/pages/CompareResults.jsx — Compare two sessions side by side
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { listSessions, compareStrategies } from '../api/client';
 import { AppShell, PageHeader, Alert } from '../components/UI';
 
-const STRATEGY_LABEL = {
-  impt:           '⭐ IMPT Intelligent',
-  random:         '🎲 Random Sampling',
-  operator_based: '🔬 Operator-Based',
-  exhaustive:     '📋 Exhaustive (Ground Truth)',
+const fmt = secs => {
+  if (!secs) return '—';
+  if (secs < 60) return `${Math.round(secs)}s`;
+  return `${(secs / 60).toFixed(1)} min`;
 };
 
-function SessionPanel({ session, job, exhaustiveJob }) {
-  if (!session) return (
-    <div style={{ flex:1, background:'var(--gray-50)', border:'2px dashed var(--gray-200)',
-      borderRadius:'var(--radius)', padding:24, display:'flex', alignItems:'center',
-      justifyContent:'center', color:'var(--gray-400)', fontSize:14, minHeight:300 }}>
-      Select a session above
-    </div>
-  );
-
-  const hasGroundTruth  = exhaustiveJob?.status === 'COMPLETED';
-  const baselineScore   = hasGroundTruth
-    ? exhaustiveJob.mutation_score
-    : (job?.estimated_score ?? job?.mutation_score ?? 0);
-  const baselineLabel   = hasGroundTruth ? 'Ground Truth' : 'Estimated';
-  const baselineColor   = hasGroundTruth ? 'var(--green)' : 'var(--amber)';
-  const primaryTimeSec  = job?.execution_time_seconds ?? 0;
-  const exhaustiveTimeSec = hasGroundTruth ? (exhaustiveJob?.execution_time_seconds ?? 0) : 0;
-  const timeSavedPct    = exhaustiveTimeSec > 0
-    ? Math.round((1 - primaryTimeSec/exhaustiveTimeSec)*100)
-    : (job?.time_saved_pct ?? 0);
-  const correlation = hasGroundTruth && baselineScore > 0
-    ? (1 - Math.abs((job?.mutation_score??0) - baselineScore) / baselineScore).toFixed(2)
-    : '≥0.95 (est.)';
-
-  const bsDisplay = typeof baselineScore === 'number'
-    ? `${baselineScore > 1 ? baselineScore.toFixed(1) : (baselineScore*100).toFixed(1)}%`
-    : '—';
-
+const MetricCard = ({ label, a, b, unit='', better='high', note }) => {
+  const aNum = parseFloat(a) || 0;
+  const bNum = parseFloat(b) || 0;
+  const diff = aNum - bNum;
+  const aBetter = better === 'high' ? diff > 0 : diff < 0;
+  const bBetter = better === 'high' ? diff < 0 : diff > 0;
+  const tied    = Math.abs(diff) < 0.01;
   return (
-    <div style={{ flex:1, border:'1px solid var(--gray-200)', borderRadius:'var(--radius)', overflow:'hidden' }}>
-      <div style={{ background:'var(--purple-mid)', color:'#fff', padding:'12px 16px' }}>
-        <div style={{ fontWeight:700, fontSize:15 }}>{session.name}</div>
-        <div style={{ fontSize:12, opacity:0.85, marginTop:2 }}>
-          {session.language} · {session.completed_at ? new Date(session.completed_at).toLocaleDateString() : session.status}
-        </div>
-      </div>
-      <div style={{ padding:16 }}>
-        {[
-          ['Strategy',    STRATEGY_LABEL[job?.strategy]||job?.strategy||'—', 'var(--purple-mid)'],
-          ['Mutation Score', `${job?.mutation_score??'—'}%`, 'var(--green)'],
-          ['Mutants Tested', `${job?.executed_mutants??job?.mutants_tested??'—'} / ${job?.total_mutants??'—'}`, 'var(--amber)'],
-          ['Execution Time', `${Math.round(primaryTimeSec/60)} min`, 'var(--blue)'],
-          [`Exhaustive Score (${baselineLabel})`, bsDisplay, baselineColor],
-          [`Correlation (${baselineLabel})`, String(correlation), hasGroundTruth?'var(--green)':'var(--amber)'],
-          ['Time Saved vs Exhaustive', `${timeSavedPct}%`, 'var(--green)'],
-        ].map(([l,v,c]) => (
-          <div key={l} style={{ display:'flex',justifyContent:'space-between',alignItems:'center',
-            padding:'8px 0',borderBottom:'1px solid var(--gray-100)',fontSize:13 }}>
-            <span style={{ color:'var(--gray-600)' }}>{l}</span>
-            <span style={{ fontWeight:700,color:c }}>{v}</span>
+    <div style={{ background:'#fff', border:'1px solid var(--gray-200)', borderRadius:10,
+      padding:'16px', textAlign:'center' }}>
+      <div style={{ fontSize:11, color:'var(--gray-500)', textTransform:'uppercase',
+        letterSpacing:'0.05em', fontWeight:600, marginBottom:12 }}>{label}</div>
+      <div style={{ display:'flex', justifyContent:'center', alignItems:'baseline', gap:12 }}>
+        <div>
+          <div style={{ fontSize:24, fontWeight:800,
+            color: tied ? 'var(--gray-700)' : aBetter ? 'var(--green)' : 'var(--red)' }}>
+            {a}{unit}
           </div>
-        ))}
-        <div style={{ marginTop:10, fontSize:11, padding:'6px 8px', borderRadius:4,
-          color: hasGroundTruth?'var(--green)':'var(--amber)',
-          background: hasGroundTruth?'var(--green-xlight)':'#FFFBEB',
-          border: `1px solid ${hasGroundTruth?'var(--green-light)':'#FDE68A'}` }}>
-          {hasGroundTruth
-            ? `✓ Ground truth: exhaustive took ${Math.round(exhaustiveTimeSec/60)} min`
-            : '⚠ No exhaustive baseline — correlation is estimated (Wilson CI)'}
+          <div style={{ fontSize:11, color:'var(--gray-400)', marginTop:2 }}>Session A</div>
+        </div>
+        <div style={{ fontSize:18, color:'var(--gray-300)', fontWeight:300 }}>vs</div>
+        <div>
+          <div style={{ fontSize:24, fontWeight:800,
+            color: tied ? 'var(--gray-700)' : bBetter ? 'var(--green)' : 'var(--red)' }}>
+            {b}{unit}
+          </div>
+          <div style={{ fontSize:11, color:'var(--gray-400)', marginTop:2 }}>Session B</div>
         </div>
       </div>
+      {note && <div style={{ fontSize:11, color:'var(--gray-500)', marginTop:8, lineHeight:1.5 }}>{note}</div>}
     </div>
   );
-}
+};
 
 export default function CompareResults() {
   const nav = useNavigate();
-  const [sessions, setSessions]     = useState([]);
-  const [leftId,  setLeftId]        = useState('');
-  const [rightId, setRightId]       = useState('');
-  const [leftData,  setLeftData]    = useState({ job:null, exhaustive:null });
-  const [rightData, setRightData]   = useState({ job:null, exhaustive:null });
-  const [loading, setLoading]       = useState(false);
+  const [searchParams] = useSearchParams();
+  const [sessions,   setSessions]   = useState([]);
+  const [sessionA,   setSessionA]   = useState(searchParams.get('a') || '');
+  const [sessionB,   setSessionB]   = useState(searchParams.get('b') || '');
+  const [jobsA,      setJobsA]      = useState(null);
+  const [jobsB,      setJobsB]      = useState(null);
+  const [loading,    setLoading]    = useState(false);
+  const [error,      setError]      = useState('');
 
-  useEffect(() => { listSessions().then(setSessions).catch(()=>{}); }, []);
+  useEffect(() => {
+    listSessions().then(all => setSessions(all.filter(s => s.status === 'completed'))).catch(() => {});
+  }, []);
 
-  const loadSession = async (sessionId, setter) => {
-    if (!sessionId) { setter({ job:null, exhaustive:null }); return; }
-    setLoading(true);
+  // Auto-compare if both are pre-selected from URL
+  useEffect(() => {
+    if (searchParams.get('a') && searchParams.get('b')) handleCompare();
+  }, []);
+
+  const handleCompare = async () => {
+    if (!sessionA || !sessionB) { setError('Please select two sessions to compare.'); return; }
+    if (sessionA === sessionB)  { setError('Please select two different sessions.'); return; }
+    setError(''); setLoading(true);
     try {
-      const cmp  = await compareStrategies(sessionId);
-      const jobs = Object.values(cmp);
-      setter({
-        job:       jobs.find(j => j.strategy !== 'exhaustive') || jobs[0],
-        exhaustive: jobs.find(j => j.strategy === 'exhaustive') || null,
-      });
-    } catch { setter({ job:null, exhaustive:null }); }
-    setLoading(false);
+      const [a, b] = await Promise.all([compareStrategies(sessionA), compareStrategies(sessionB)]);
+      setJobsA(a); setJobsB(b);
+    } catch {
+      setError('Failed to load comparison data. Please try again.');
+    } finally { setLoading(false); }
   };
 
-  useEffect(() => { loadSession(leftId,  setLeftData);  }, [leftId]);
-  useEffect(() => { loadSession(rightId, setRightData); }, [rightId]);
+  const getMetrics = (jobs) => {
+    if (!jobs) return null;
+    const primary   = Object.values(jobs).find(j => j.strategy !== 'exhaustive');
+    const exhaustive = Object.values(jobs).find(j => j.strategy === 'exhaustive');
+    if (!primary) return null;
+    const score   = (primary.mutation_score || 0) * 100;
+    const exhScore = exhaustive ? (exhaustive.mutation_score || 0) * 100 : null;
+    const execSecs  = primary.execution_time_seconds || 0;
+    const correlation = primary.real_correlation;
+    return { primary, exhaustive, score, exhScore, execSecs, correlation,
+             executed: primary.executed_mutants || 0, total: primary.total_mutants || 0,
+             timeSaved: primary.time_saved_pct || 0 };
+  };
 
-  const leftSession  = sessions.find(s => s.id === leftId);
-  const rightSession = sessions.find(s => s.id === rightId);
+  const mA = getMetrics(jobsA);
+  const mB = getMetrics(jobsB);
+  const sA = sessions.find(s => s.id === sessionA);
+  const sB = sessions.find(s => s.id === sessionB);
+
+  const getSummary = () => {
+    if (!mA || !mB) return null;
+    const scoreDiff = mA.score - mB.score;
+    const timeDiff  = mB.execSecs - mA.execSecs;
+    const faster    = timeDiff > 0 ? 'A' : 'B';
+    const higher    = scoreDiff > 0 ? 'A' : 'B';
+
+    if (Math.abs(scoreDiff) < 1) {
+      return `Sessions A and B achieved nearly identical mutation scores (${mA.score.toFixed(1)}% vs ${mB.score.toFixed(1)}%). ` +
+        (Math.abs(timeDiff) > 5
+          ? `Session ${faster} completed ${fmt(Math.abs(timeDiff))} faster, making it the more efficient option.`
+          : `Both sessions also completed in similar time.`);
+    }
+
+    return `Session ${higher} achieved a ${Math.abs(scoreDiff).toFixed(1)} percentage point higher mutation score ` +
+      `(${(higher === 'A' ? mA : mB).score.toFixed(1)}% vs ${(higher === 'A' ? mB : mA).score.toFixed(1)}%). ` +
+      (Math.abs(timeDiff) > 5
+        ? `Session ${faster} was ${fmt(Math.abs(timeDiff))} faster. ` +
+          (higher !== faster
+            ? `There is a tradeoff — the more accurate session took longer. Consider your time constraints.`
+            : `Session ${higher} achieved both a better score and faster execution.`)
+        : `Execution time was similar for both sessions.`);
+  };
 
   return (
     <AppShell>
-      <PageHeader icon="🔀" title="Compare Sessions"
-        right={<button className="hdr-btn ghost" onClick={()=>nav(-1)}>← Back</button>}
+      <PageHeader icon="⚖️" title="Compare Results"
+        right={<button className="btn btn-secondary btn-sm" onClick={() => nav(-1)}>← Back</button>}
       />
       <div className="page-content">
+
+        {/* Session selector */}
         <div className="card mb-4">
-          <div className="card-title" style={{ marginBottom:12 }}>Select Two Sessions to View Side-by-Side</div>
-          <div style={{ display:'flex',gap:16,alignItems:'center',flexWrap:'wrap' }}>
-            <div style={{ flex:1 }}>
-              <label className="form-label">Session A</label>
-              <select className="form-select" value={leftId} onChange={e=>setLeftId(e.target.value)}>
-                <option value="">— Choose session —</option>
-                {sessions.filter(s=>s.status==='completed').map(s=>(
-                  <option key={s.id} value={s.id}>{s.name} ({new Date(s.completed_at||s.created_at).toLocaleDateString()})</option>
+          <div style={{ fontSize:14, fontWeight:600, marginBottom:12 }}>Select Sessions to Compare</div>
+          <div style={{ display:'flex', gap:12, alignItems:'flex-end', flexWrap:'wrap' }}>
+            <div style={{ flex:1, minWidth:200 }}>
+              <div style={{ fontSize:11, color:'var(--gray-500)', marginBottom:4, fontWeight:600 }}>SESSION A</div>
+              <select value={sessionA} onChange={e => setSessionA(e.target.value)}
+                style={{ width:'100%', padding:'8px 10px', borderRadius:6,
+                  border:'1px solid var(--gray-200)', fontSize:13 }}>
+                <option value="">— Select a session —</option>
+                {sessions.map(s => (
+                  <option key={s.id} value={s.id}>{s.name} ({new Date(s.updated_at||s.created_at).toLocaleDateString()})</option>
                 ))}
               </select>
             </div>
-            <div style={{ fontSize:18,color:'var(--gray-400)',paddingTop:20 }}>vs</div>
-            <div style={{ flex:1 }}>
-              <label className="form-label">Session B</label>
-              <select className="form-select" value={rightId} onChange={e=>setRightId(e.target.value)}>
-                <option value="">— Choose session —</option>
-                {sessions.filter(s=>s.status==='completed').map(s=>(
-                  <option key={s.id} value={s.id}>{s.name} ({new Date(s.completed_at||s.created_at).toLocaleDateString()})</option>
+            <div style={{ fontSize:18, color:'var(--gray-400)', paddingBottom:8 }}>vs</div>
+            <div style={{ flex:1, minWidth:200 }}>
+              <div style={{ fontSize:11, color:'var(--gray-500)', marginBottom:4, fontWeight:600 }}>SESSION B</div>
+              <select value={sessionB} onChange={e => setSessionB(e.target.value)}
+                style={{ width:'100%', padding:'8px 10px', borderRadius:6,
+                  border:'1px solid var(--gray-200)', fontSize:13 }}>
+                <option value="">— Select a session —</option>
+                {sessions.map(s => (
+                  <option key={s.id} value={s.id}>{s.name} ({new Date(s.updated_at||s.created_at).toLocaleDateString()})</option>
                 ))}
               </select>
             </div>
+            <button className="btn btn-primary" onClick={handleCompare} disabled={loading}>
+              {loading ? 'Loading…' : '⚖️ Compare'}
+            </button>
           </div>
-          <div style={{ marginTop:8,fontSize:12,color:'var(--gray-400)' }}>
-            Each session is shown with its own results vs its exhaustive baseline (ground truth or estimated independently).
-            This viewer does not cross-compare the two sessions — use it to evaluate different strategies or projects.
-          </div>
+          {error && <div style={{ marginTop:12 }}><Alert type="error">{error}</Alert></div>}
         </div>
 
-        {loading && <Alert type="info">Loading session data…</Alert>}
+        {/* Results */}
+        {mA && mB && (
+          <>
+            {/* Summary banner */}
+            <div style={{ background:'var(--purple-mid)', borderRadius:10, padding:'20px 24px',
+              marginBottom:24, color:'#fff' }}>
+              <div style={{ fontSize:12, fontWeight:700, textTransform:'uppercase',
+                letterSpacing:'0.1em', marginBottom:8, opacity:0.8 }}>📊 Comparison Summary</div>
+              <div style={{ fontSize:15, lineHeight:1.75 }}>{getSummary()}</div>
+            </div>
 
-        <div style={{ display:'flex',gap:16,alignItems:'flex-start' }}>
-          <SessionPanel session={leftSession}  job={leftData.job}  exhaustiveJob={leftData.exhaustive} />
-          <SessionPanel session={rightSession} job={rightData.job} exhaustiveJob={rightData.exhaustive} />
-        </div>
+            {/* Metric cards */}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12, marginBottom:24 }}>
+              <MetricCard label="Mutation Score" a={mA.score.toFixed(1)} b={mB.score.toFixed(1)} unit="%" better="high"
+                note={Math.abs(mA.score - mB.score) < 1 ? 'Virtually identical' :
+                  `${Math.abs(mA.score - mB.score).toFixed(1)}pp difference`} />
+              <MetricCard label="Execution Time" a={fmt(mA.execSecs)} b={fmt(mB.execSecs)} better="low"
+                note={mA.execSecs && mB.execSecs ?
+                  (mA.execSecs < mB.execSecs ? `A is ${fmt(mB.execSecs - mA.execSecs)} faster` :
+                   mB.execSecs < mA.execSecs ? `B is ${fmt(mA.execSecs - mB.execSecs)} faster` : 'Same speed') : ''} />
+              <MetricCard label="Mutants Tested"
+                a={`${mA.executed}/${mA.total}`} b={`${mB.executed}/${mB.total}`} better="high"
+                note={`A: ${mA.total > 0 ? ((mA.executed/mA.total)*100).toFixed(0) : 0}% sample · B: ${mB.total > 0 ? ((mB.executed/mB.total)*100).toFixed(0) : 0}% sample`} />
+              <MetricCard label="Time Saved vs Exhaustive"
+                a={`${mA.timeSaved.toFixed(1)}%`} b={`${mB.timeSaved.toFixed(1)}%`} better="high"
+                note="Higher = more efficient than exhaustive testing" />
+              <MetricCard label="Correlation"
+                a={mA.correlation != null ? mA.correlation.toFixed(3) : '—'}
+                b={mB.correlation != null ? mB.correlation.toFixed(3) : '—'}
+                better="high"
+                note="How closely results match exhaustive testing" />
+              <MetricCard label="Exhaustive Score"
+                a={mA.exhScore != null ? `${mA.exhScore.toFixed(1)}%` : '—'}
+                b={mB.exhScore != null ? `${mB.exhScore.toFixed(1)}%` : '—'}
+                better="high"
+                note="Ground truth score (only if exhaustive was run)" />
+            </div>
+
+            {/* Key differences table */}
+            <div className="card mb-4">
+              <div className="card-title" style={{ marginBottom:16 }}>Key Differences</div>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th style={{ textAlign:'center' }}>{sA?.name || 'Session A'}</th>
+                    <th style={{ textAlign:'center' }}>{sB?.name || 'Session B'}</th>
+                    <th>Insight</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    {
+                      cat: 'Mutation Score',
+                      a: `${mA.score.toFixed(1)}%`, b: `${mB.score.toFixed(1)}%`,
+                      insight: Math.abs(mA.score - mB.score) < 1
+                        ? 'Effectively identical — both sessions found the same proportion of bugs.'
+                        : `${mA.score > mB.score ? 'A' : 'B'} found ${Math.abs(mA.score - mB.score).toFixed(1)}pp more bugs.`,
+                    },
+                    {
+                      cat: 'Mutants Skipped',
+                      a: mA.total - mA.executed, b: mB.total - mB.executed,
+                      insight: 'Mutants not executed due to subsumption or time budget.',
+                    },
+                    {
+                      cat: 'Survived Mutants',
+                      a: mA.executed - (mA.primary.killed_mutants || 0),
+                      b: mB.executed - (mB.primary.killed_mutants || 0),
+                      insight: 'Survived mutants represent potential test gaps.',
+                    },
+                    {
+                      cat: 'Strategy',
+                      a: mA.primary.strategy === 'impt' ? '⭐ IMPT' :
+                         mA.primary.strategy === 'operator_based' ? '🔬 Operator' : '🎲 Random',
+                      b: mB.primary.strategy === 'impt' ? '⭐ IMPT' :
+                         mB.primary.strategy === 'operator_based' ? '🔬 Operator' : '🎲 Random',
+                      insight: mA.primary.strategy === mB.primary.strategy
+                        ? 'Both sessions used the same strategy.'
+                        : 'Different strategies — score differences may reflect prioritization effectiveness.',
+                    },
+                  ].map(({ cat, a, b, insight }) => (
+                    <tr key={cat}>
+                      <td style={{ fontWeight:600 }}>{cat}</td>
+                      <td style={{ textAlign:'center' }}>{String(a)}</td>
+                      <td style={{ textAlign:'center' }}>{String(b)}</td>
+                      <td style={{ fontSize:12, color:'var(--gray-500)', lineHeight:1.5 }}>{insight}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Recommendation */}
+            <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10,
+              padding:'16px 20px', fontSize:13, lineHeight:1.75 }}>
+              <strong>💡 Recommendation: </strong>
+              {(() => {
+                if (!mA || !mB) return '';
+                const scoreDiff = Math.abs(mA.score - mB.score);
+                const timeDiff  = Math.abs(mA.execSecs - mB.execSecs);
+                const aFaster   = mA.execSecs < mB.execSecs;
+                const aHigher   = mA.score > mB.score;
+
+                if (scoreDiff < 1)
+                  return `Both sessions performed similarly. ${aFaster ? 'Session A' : 'Session B'} was faster, making it the more efficient choice for regular use.`;
+                if (aHigher && aFaster)
+                  return `Session A achieved both a higher score and faster execution — it is the clearly superior configuration for this project.`;
+                if (!aHigher && !aFaster)
+                  return `Session B achieved both a higher score and faster execution — it is the clearly superior configuration for this project.`;
+                return `There is a tradeoff: ${aHigher ? 'Session A' : 'Session B'} scores ${scoreDiff.toFixed(1)}pp higher but takes ${fmt(timeDiff)} longer. ` +
+                  `Use the higher-scoring session for critical releases and the faster one for day-to-day development feedback.`;
+              })()}
+            </div>
+          </>
+        )}
+
+        {!mA && !mB && !loading && (
+          <div style={{ textAlign:'center', padding:'60px 20px', color:'var(--gray-400)' }}>
+            <div style={{ fontSize:48, marginBottom:16 }}>⚖️</div>
+            <div style={{ fontSize:16, fontWeight:600, marginBottom:8 }}>Select two sessions above to compare</div>
+            <div style={{ fontSize:13 }}>You can also click the Compare button on any session in Test History.</div>
+          </div>
+        )}
+
       </div>
     </AppShell>
   );
