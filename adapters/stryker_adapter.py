@@ -192,8 +192,8 @@ class StrykerAdapter:
         # Write a special enumeration config: no-op test runner so Stryker
         # writes the full JSON report instantly with all mutants as Survived.
         # No real tests are executed — IMPT scores on static factors only.
-        _, _, is_esm, src_pattern = self._detect_project()
-        enum_config = self._build_enum_config(src_pattern)
+        _, _, is_esm, src_pattern, excl = self._detect_project()
+        enum_config = self._build_enum_config(src_pattern, excl)
         name = "stryker.config.cjs" if is_esm else "stryker.config.js"
         for old in ["stryker.config.js", "stryker.config.cjs", ".strykerrc.json"]:
             p = self.project_dir / old
@@ -280,13 +280,27 @@ class StrykerAdapter:
             if p.exists() and p.is_dir() and any(p.rglob("*.js")):
                 src_pattern = candidate + "/**/*.js"
                 break
+        else:
+            # No standard src dir — use root JS files but exclude tests/config
+            src_pattern = "*.js"
 
-        return test_runner, test_command, is_esm, src_pattern
+        # Always exclude test files, config files and node_modules
+        # These exclusions are appended to whatever pattern was found
+        EXCLUDE_PATTERNS = [
+            "!**/*.test.js", "!**/*.spec.js", "!**/*.config.*",
+            "!**/*test*", "!**/*spec*", "!tests.js", "!test.js",
+            "!jest.config.*", "!babel.config.*", "!webpack.config.*",
+        ]
 
-    def _build_enum_config(self, src_pattern: str) -> str:
+        return test_runner, test_command, is_esm, src_pattern, EXCLUDE_PATTERNS
+
+    def _build_enum_config(self, src_pattern: str, excludes: list = None) -> str:
         """Config for Phase 1 enumeration: no-op test runner so Stryker
         writes the full JSON report instantly with all mutants as Survived."""
-        mutate_str = f'"{src_pattern}"'
+        sep = ",\n    "
+        excl_parts = [f'"{e}"' for e in (excludes or [])]
+        all_entries = [f'"{src_pattern}"'] + excl_parts
+        mutate_str = sep.join(all_entries)
         lines = [
             "/** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */",
             "module.exports = {",
@@ -308,20 +322,18 @@ class StrykerAdapter:
         return "\n".join(lines) + "\n"
 
     def _build_config(self, test_runner, test_command,
-                       src_pattern, mutate_override=None):
+                       src_pattern, mutate_override=None, excludes=None):
         if mutate_override:
             # Filtered run — only mutate specific file:line ranges
             entries = ['"' + p + '"' for p in mutate_override]
         else:
-            entries = [
-                '"' + src_pattern + '"',
-                '"!**/*.test.js"',
-                '"!**/*.spec.js"',
-                '"!**/*.test-d.js"',
-                '"!node_modules/**"',
-                '"!benchmark*"',
-                '"!examples/**"',
+            base_excludes = [
+                '"!**/*.test.js"', '"!**/*.spec.js"', '"!**/*.test-d.js"',
+                '"!node_modules/**"', '"!benchmark*"', '"!examples/**"',
+                '"!tests.js"', '"!test.js"', '"!**/*.config.*"',
             ]
+            extra = [f'"{e}"' for e in (excludes or []) if f'"{e}"' not in base_excludes]
+            entries = ['"' + src_pattern + '"'] + base_excludes + extra
         mutate_str = (",\n    ").join(entries)
 
         if test_runner == "jest":
@@ -363,7 +375,7 @@ class StrykerAdapter:
         # Lets us hardcode correct test runner for projects with unusual setups.
         override_cfg = self.project_dir / "stryker.impt.config.cjs"
         if override_cfg.exists() and not mutate_override:
-            test_runner, test_command, is_esm, src_pattern = self._detect_project()
+            test_runner, test_command, is_esm, src_pattern, excl = self._detect_project()
             name = "stryker.config.cjs" if is_esm else "stryker.config.js"
             import shutil as _shutil
             _shutil.copy2(str(override_cfg), str(self.project_dir / name))
@@ -374,9 +386,9 @@ class StrykerAdapter:
             p = self.project_dir / old_cfg
             if p.exists():
                 p.unlink()
-        test_runner, test_command, is_esm, src_pattern = self._detect_project()
+        test_runner, test_command, is_esm, src_pattern, excl = self._detect_project()
         config = self._build_config(test_runner, test_command, src_pattern,
-                                     mutate_override)
+                                     mutate_override, excl)
         name = "stryker.config.cjs" if is_esm else "stryker.config.js"
         (self.project_dir / name).write_text(config)
         log.info("Generated %s: runner=%s src=%s filtered=%s",
@@ -494,7 +506,7 @@ class StrykerAdapter:
         # Lets us hardcode correct test runner for projects with unusual setups.
         override_cfg = self.project_dir / "stryker.impt.config.cjs"
         if override_cfg.exists() and not mutate_override:
-            test_runner, test_command, is_esm, src_pattern = self._detect_project()
+            test_runner, test_command, is_esm, src_pattern, excl = self._detect_project()
             name = "stryker.config.cjs" if is_esm else "stryker.config.js"
             import shutil as _shutil
             _shutil.copy2(str(override_cfg), str(self.project_dir / name))
@@ -505,9 +517,9 @@ class StrykerAdapter:
             p = self.project_dir / old_cfg
             if p.exists():
                 p.unlink()
-        test_runner, test_command, is_esm, src_pattern = self._detect_project()
+        test_runner, test_command, is_esm, src_pattern, excl = self._detect_project()
         config = self._build_config(test_runner, test_command, src_pattern,
-                                     mutate_override)
+                                     mutate_override, excl)
         name = "stryker.config.cjs" if is_esm else "stryker.config.js"
         (self.project_dir / name).write_text(config)
         log.info("Generated %s: runner=%s src=%s filtered=%s",
