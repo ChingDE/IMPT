@@ -36,8 +36,8 @@ export default function Results() {
   const loadJobs = async () => {
     try {
       const cmp = await compareStrategies(sessionId);
-      const updated = Object.values(cmp);
-      setJobs(updated);
+      const updated = Object.values(cmp || {});
+      if (updated.length > 0) setJobs(updated);
       // Stop polling if all done
       const exhaustive = updated.find(j => j.strategy === 'exhaustive');
       if (!exhaustive || exhaustive.status?.toUpperCase() === 'COMPLETED' || exhaustive.status?.toUpperCase() === 'FAILED') {
@@ -51,12 +51,19 @@ export default function Results() {
       try {
         const s = await getSession(sessionId);
         setSession(s);
-        await loadJobs();
-        // Start polling if exhaustive job is still running
-        const allJobs = Object.values(await compareStrategies(sessionId).catch(() => ({})));
+        // Single call — use result for both job state and mutant loading
+        let allJobs = [];
+        try {
+          const cmp = await compareStrategies(sessionId);
+          allJobs = Object.values(cmp || {});
+          if (allJobs.length > 0) setJobs(allJobs);
+        } catch (e) {
+          console.error('compareStrategies failed:', e);
+        }
+        // Poll if exhaustive is still running
         const exhaustive = allJobs.find(j => j.strategy === 'exhaustive');
-        if (exhaustive && exhaustive.status?.toUpperCase() !== 'COMPLETED' && exhaustive.status?.toUpperCase() !== 'FAILED') {
-          pollRef.current = setInterval(loadJobs, 10000); // poll every 10s
+        if (exhaustive && !['COMPLETED','completed','FAILED','failed'].includes(exhaustive.status)) {
+          pollRef.current = setInterval(loadJobs, 10000);
         }
         // Load mutant records from primary job
         const primary = allJobs.find(j => j.strategy !== 'exhaustive') || allJobs[0];
@@ -64,9 +71,13 @@ export default function Results() {
           try {
             const recs = await getJobMutants(primary.id);
             setMutants(recs.sort((a,b) => (b.priority_score||0) - (a.priority_score||0)));
-          } catch {}
+          } catch (e) {
+            console.error('getJobMutants failed:', e);
+          }
         }
-      } catch {}
+      } catch (e) {
+        console.error('Results load failed:', e);
+      }
       setLoading(false);
     };
     load();
