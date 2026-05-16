@@ -46,7 +46,7 @@ export default function Login() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-logo">
-          <LogoMark size={28} />
+          <LogoMark size={64} />
           <div style={{ marginTop: 12 }}>
             <div className="auth-brand">NovaSoft</div>
             <div className="auth-sub">Innovation Software</div>

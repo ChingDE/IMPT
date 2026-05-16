@@ -1,10 +1,12 @@
 // src/components/UI.jsx
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   Home, PlayCircle, BarChart2, Settings, Clock, Save, HelpCircle,
   TrendingUp, History, GitCompare,
-  User, Shield, Info, CheckCircle, XCircle, AlertTriangle, X
+  User, Shield, Info, CheckCircle, XCircle, AlertTriangle, X,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
@@ -19,6 +21,7 @@ export function Sidebar() {
   const nav = useNavigate();
   const loc = useLocation();
   const { user, signOut } = useAuth();
+  const [collapsed, setCollapsed] = useState(false);
 
   const navItems = [
     { path: '/dashboard',   label: 'Dashboard',         icon: Home },
@@ -30,42 +33,129 @@ export function Sidebar() {
   ];
 
   const isActive = p => loc.pathname === p || loc.pathname.startsWith(p + '/');
+  const w = collapsed ? 60 : 240;
 
   return (
-    <div className="sidebar">
-      <div className="sidebar-logo">
-        <LogoMark />
-        <div className="sidebar-logo-text">
-          <div className="name">IMPT</div>
-          <div className="sub">NovaSoft · FEU Tech</div>
-        </div>
+    <div style={{
+      width: w, minWidth: w, background: '#fff',
+      borderRight: '1px solid var(--gray-200)',
+      display: 'flex', flexDirection: 'column', flexShrink: 0,
+      overflowY: 'auto', overflowX: 'hidden',
+      transition: 'width .2s ease, min-width .2s ease',
+      position: 'relative',
+    }}>
+      {/* Logo */}
+      <div style={{
+        padding: collapsed ? '18px 0 14px' : '18px 20px 14px',
+        borderBottom: '1px solid var(--gray-100)',
+        display: 'flex', alignItems: 'center',
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        gap: 10, overflow: 'hidden',
+      }}>
+        <LogoMark size={32} />
+        {!collapsed && (
+          <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-900)' }}>IMPT</div>
+            <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 1 }}>NovaSoft · FEU Tech</div>
+          </div>
+        )}
       </div>
 
-      <nav className="sidebar-nav">
-        {navItems.map(({ path, label, icon: Icon }) => (
-          <button key={path} className={`nav-link ${isActive(path) ? 'active' : ''}`} onClick={() => nav(path)}>
-            <Icon size={16} /> {label}
-          </button>
-        ))}
-        <hr className="divider" />
-        <button className={`nav-link ${loc.pathname === '/profile' ? 'active' : ''}`} onClick={() => nav('/profile')}>
-          <User size={16} /> My Profile
-        </button>
-        {user?.role === 'admin' && (
-          <button className={`nav-link ${loc.pathname.startsWith('/admin') ? 'active' : ''}`} onClick={() => nav('/admin')}>
-            <Shield size={16} /> Admin Dashboard
-          </button>
-        )}
+      {/* Nav items */}
+      <nav style={{ padding: collapsed ? '10px 6px' : '10px', flex: 1 }}>
+        {navItems.map(({ path, label, icon: Icon }) => {
+          const active = isActive(path);
+          return (
+            <button key={path}
+              title={collapsed ? label : undefined}
+              onClick={() => nav(path)}
+              style={{
+                display: 'flex', alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                gap: collapsed ? 0 : 10,
+                width: '100%', padding: collapsed ? '10px 0' : '9px 12px',
+                borderRadius: 6, border: 'none', cursor: 'pointer',
+                background: active ? 'var(--purple-xlight)' : 'transparent',
+                color: active ? 'var(--purple-mid)' : 'var(--gray-600)',
+                fontWeight: active ? 600 : 400, fontSize: 13.5,
+                marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden',
+                transition: 'background .15s',
+              }}>
+              <Icon size={16} style={{ flexShrink: 0 }} />
+              {!collapsed && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>}
+            </button>
+          );
+        })}
+        <hr style={{ border: 'none', borderTop: '1px solid var(--gray-100)', margin: '8px 0' }} />
+        {[
+          { path: '/profile', label: 'My Profile', icon: User },
+          ...(user?.role === 'admin' ? [{ path: '/admin', label: 'Admin Dashboard', icon: Shield }] : []),
+        ].map(({ path, label, icon: Icon }) => {
+          const active = loc.pathname === path || loc.pathname.startsWith(path + '/');
+          return (
+            <button key={path}
+              title={collapsed ? label : undefined}
+              onClick={() => nav(path)}
+              style={{
+                display: 'flex', alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                gap: collapsed ? 0 : 10,
+                width: '100%', padding: collapsed ? '10px 0' : '9px 12px',
+                borderRadius: 6, border: 'none', cursor: 'pointer',
+                background: active ? 'var(--purple-xlight)' : 'transparent',
+                color: active ? 'var(--purple-mid)' : 'var(--gray-600)',
+                fontWeight: active ? 600 : 400, fontSize: 13.5,
+                marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden',
+              }}>
+              <Icon size={16} style={{ flexShrink: 0 }} />
+              {!collapsed && <span>{label}</span>}
+            </button>
+          );
+        })}
       </nav>
 
-      <div className="sidebar-footer">
-        <div className="sys-status-label">System Status</div>
-        <div className="sys-status-ok"><div className="sys-dot" /> All systems normal</div>
-        <button className="btn btn-secondary btn-sm btn-full mt-3" style={{ fontSize: 12 }}
-          onClick={() => { signOut(); nav('/login'); }}>
-          Sign out
-        </button>
-      </div>
+      {/* Footer */}
+      {!collapsed && (
+        <div style={{ padding: '14px 16px', borderTop: '1px solid var(--gray-100)' }}>
+          <div style={{ fontSize: 10, color: 'var(--gray-400)', textTransform: 'uppercase',
+            letterSpacing: '0.05em', marginBottom: 4 }}>System Status</div>
+          <div style={{ fontSize: 12, color: 'var(--green)', display: 'flex',
+            alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)' }} />
+            All systems normal
+          </div>
+          <button className="btn btn-secondary btn-sm btn-full mt-3" style={{ fontSize: 12 }}
+            onClick={() => { signOut(); nav('/login'); }}>
+            Sign out
+          </button>
+        </div>
+      )}
+      {collapsed && (
+        <div style={{ padding: '12px 0', borderTop: '1px solid var(--gray-100)',
+          display: 'flex', justifyContent: 'center' }}>
+          <button title="Sign out"
+            onClick={() => { signOut(); nav('/login'); }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--gray-400)', fontSize: 18, padding: '6px' }}>
+            ⏻
+          </button>
+        </div>
+      )}
+
+      {/* Collapse toggle */}
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        style={{
+          position: 'absolute', top: 20, right: -12,
+          width: 24, height: 24, borderRadius: '50%',
+          border: '1px solid var(--gray-200)', background: '#fff',
+          cursor: 'pointer', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+          zIndex: 10, padding: 0, color: 'var(--gray-500)',
+        }}>
+        {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+      </button>
     </div>
   );
 }
