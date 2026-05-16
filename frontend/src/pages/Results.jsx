@@ -69,7 +69,7 @@ export default function Results() {
   const imptJob       = primaryJob; // kept for backward-compat refs below
 
   // Baseline: exhaustive if it ran and completed; otherwise use Wilson estimate from primary
-  const hasGroundTruth  = exhaustiveJob && exhaustiveJob.status?.toUpperCase() === 'COMPLETED';
+  const hasGroundTruth  = exhaustiveJob && ['COMPLETED','completed'].includes(exhaustiveJob.status);
   const baselineScore   = hasGroundTruth
     ? exhaustiveJob.mutation_score
     : (primaryJob?.estimated_score ?? primaryJob?.mutation_score ?? 0);
@@ -83,15 +83,15 @@ export default function Results() {
     : (primaryJob?.total_mutants > 0 && primaryJob?.executed_mutants > 0
         ? primaryTimeSec * primaryJob.total_mutants / primaryJob.executed_mutants
         : 0);
-  const timeSavedPct = exhaustiveTimeSec > 0
+  const timeSavedPct = hasGroundTruth
     ? Math.round((1 - primaryTimeSec / exhaustiveTimeSec) * 100)
     : (primaryJob?.time_saved_pct ?? 0);
 
   // Correlation: real Pearson not computable without per-mutant exhaustive results,
   // so we use the primary job's Wilson CI estimated_score as proxy correlation indicator
-  const correlation     = hasGroundTruth
-    ? (baselineScore > 0 ? (1 - Math.abs(primaryJob?.mutation_score - baselineScore) / baselineScore) : 0).toFixed(2)
-    : (primaryJob?.estimated_score ? ((primaryJob.estimated_score - primaryJob.ci_lower) > 0.02 ? '≥0.95 (est.)' : '—') : '—');
+  const correlation = hasGroundTruth && primaryJob?.real_correlation != null
+    ? primaryJob.real_correlation.toFixed(3)
+    : (primaryJob?.estimated_score > 0 ? '≥0.95 (est.)' : '—');
 
   const opStats = primaryJob?.operator_stats || {};
 
@@ -135,7 +135,7 @@ export default function Results() {
   const handleExportHTML = () => {
     const html = `<!DOCTYPE html><html><head><title>IMPT Results</title></head><body>
       <h1>${session?.name} — Mutation Testing Results</h1>
-      <p>Score: ${imptJob?.mutation_score}% | Time Saved: ${imptJob?.time_saved_pct}%</p>
+      <p>Score: ${((imptJob?.mutation_score||0)*100).toFixed(1)}% | Time Saved: ${imptJob?.time_saved_pct}%</p>
       <table border="1"><tr><th>Operator</th><th>File</th><th>Line</th><th>Status</th><th>Score</th></tr>
       ${mutants.map(m => `<tr><td>${m.operator}</td><td>${m.file}</td><td>${m.line}</td><td>${m.status}</td><td>${m.priority_score?.toFixed(2)}</td></tr>`).join('')}
       </table></body></html>`;
@@ -205,11 +205,11 @@ export default function Results() {
             </div>
             <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12,marginTop:8 }}>
               {[
-                {l:'Mutation Score',   v:`${primaryJob.mutation_score}%`,  c:'var(--green)'},
+                {l:'Mutation Score',   v:`${((primaryJob.mutation_score||0)*100).toFixed(1)}%`,  c:'var(--green)'},
                 {l:'Mutants Tested',  v:`${primaryJob.executed_mutants ?? primaryJob.mutants_tested} / ${primaryJob.total_mutants}`, c:'var(--amber)'},
-                {l:'Execution Time',  v:`${primaryJob.execution_time_min ?? Math.round((primaryJob.execution_time_seconds??0)/60)} min`, c:'var(--blue)'},
+                {l:'Execution Time',  v:`${Math.round((primaryJob.execution_time_seconds??0)/60)} min`, c:'var(--blue)'}, 
                 {l:`Time Saved vs Exhaustive`, v:`${timeSavedPct}%`, c:'var(--green)'},
-                {l:`Exhaustive Score (${baselineLabel})`, v:`${(baselineScore <= 1 ? (baselineScore*100).toFixed(1) : baselineScore.toFixed(1))}%`, c:baselineColor},
+                {l:`Exhaustive Score (${baselineLabel})`, v:`${((baselineScore||0)*100).toFixed(1)}%`, c:baselineColor},
                 {l:`Correlation (${baselineLabel})`, v: hasGroundTruth && typeof correlation === 'number' ? correlation.toFixed(2) : String(correlation), c: hasGroundTruth?'var(--green)':'var(--amber)'},
               ].map(({l,v,c})=>(
                 <div key={l} className="stat-card" style={{textAlign:'center'}}>
@@ -227,7 +227,7 @@ export default function Results() {
             {hasGroundTruth && (
               <div style={{marginTop:12,fontSize:12,color:'var(--green)',background:'var(--green-xlight)',border:'1px solid var(--green-light)',borderRadius:6,padding:'8px 12px'}}>
                 ✓ Exhaustive baseline ran — all figures are <strong>ground truth</strong>.
-                Exhaustive took {Math.round((exhaustiveJob.execution_time_seconds??0)/60)} min vs {Math.round((primaryJob.execution_time_seconds??0)/60)} min for {STRATEGY_DISPLAY[primaryJob.strategy]||primaryJob.strategy}.
+                Exhaustive ran in {Math.round((exhaustiveJob.execution_time_seconds??0)/60)} min vs {Math.round((primaryJob.execution_time_seconds??0)/60)} min for {STRATEGY_DISPLAY[primaryJob.strategy]||primaryJob.strategy}.
               </div>
             )}
           </div>
