@@ -90,7 +90,7 @@ async def compare_strategies(
 
     if primary_exec > 0 and exhaustive_exec > 0:
         real_time_saved = round((1 - primary_exec / exhaustive_exec) * 100, 1)
-    elif primary_job and primary_job.time_saved_pct:
+    elif primary_job and (primary_job.time_saved_pct or 0) > 0:
         real_time_saved = round(primary_job.time_saved_pct, 1)
     else:
         real_time_saved = 0.0

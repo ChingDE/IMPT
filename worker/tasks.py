@@ -337,8 +337,9 @@ def _run_engine(job_id: str, config: dict) -> dict:
         selected = interleaved
 
     # ── Phase 3: Execute selected mutants ────────────────────────────────────
-    exec_count = [0]
-    kill_count = [0]
+    exec_count  = [0]
+    kill_count  = [0]
+    phase3_start = time.time()
 
     lang = config.get("language", "java").lower()
     use_real_runner = (upload_path and Path(upload_path).exists()
@@ -445,7 +446,7 @@ def _run_engine(job_id: str, config: dict) -> dict:
         "ci_upper":                   result.estimate.upper_bound     if result.estimate else 0.0,
         "time_saved_pct":             result.time_saved_pct,
         "subsumption_reduction_pct":  result.subsumption_reduction_pct,
-        "execution_time_seconds":     result.total_execution_time,
+        "execution_time_seconds":     time.time() - phase3_start,  # actual wall-clock time
         "result_json":                {"operator_stats": result.operator_stats,
                                        "summary": result.summary()},
         "mutant_records":             records,
