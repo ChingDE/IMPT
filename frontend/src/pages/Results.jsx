@@ -1,5 +1,5 @@
 // src/pages/Results.jsx  FR107-FR118
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getSession, exportJobCSV, createShareLink, compareStrategies, getJobMutants } from '../api/client';
 import { AppShell, PageHeader, ScorePill, Alert } from '../components/UI';
@@ -28,25 +28,38 @@ export default function Results() {
   const [shareErr, setShareErr]   = useState('');
   const [loading, setLoading]     = useState(true);
   const PER_PAGE = 50;
+  const pollRef = useRef(null);
+
+  const loadJobs = async () => {
+    try {
+      const cmp = await compareStrategies(sessionId);
+      const updated = Object.values(cmp);
+      setJobs(updated);
+      // Stop polling if all done
+      const exhaustive = updated.find(j => j.strategy === 'exhaustive');
+      if (!exhaustive || exhaustive.status?.toUpperCase() === 'COMPLETED' || exhaustive.status?.toUpperCase() === 'FAILED') {
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      }
+    } catch {}
+  };
 
   useEffect(() => {
     const load = async () => {
       try {
         const s = await getSession(sessionId);
         setSession(s);
-        // Load comparison data
-        try {
-          const cmp = await compareStrategies(sessionId);
-          setJobs(Object.values(cmp));
-        } catch {}
-        // Load mutants from IMPT job
-        try {
-          // Use compare endpoint to find job IDs then fetch mutants
-        } catch {}
+        await loadJobs();
+        // Start polling if exhaustive job is still running
+        const allJobs = Object.values(await compareStrategies(sessionId).catch(() => ({})));
+        const exhaustive = allJobs.find(j => j.strategy === 'exhaustive');
+        if (exhaustive && exhaustive.status?.toUpperCase() !== 'COMPLETED' && exhaustive.status?.toUpperCase() !== 'FAILED') {
+          pollRef.current = setInterval(loadJobs, 10000); // poll every 10s
+        }
       } catch {}
       setLoading(false);
     };
     load();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [sessionId]);
 
   // Primary job = the strategy the user chose (impt / random / operator_based)
@@ -56,7 +69,7 @@ export default function Results() {
   const imptJob       = primaryJob; // kept for backward-compat refs below
 
   // Baseline: exhaustive if it ran and completed; otherwise use Wilson estimate from primary
-  const hasGroundTruth  = exhaustiveJob && exhaustiveJob.status === 'COMPLETED';
+  const hasGroundTruth  = exhaustiveJob && exhaustiveJob.status?.toUpperCase() === 'COMPLETED';
   const baselineScore   = hasGroundTruth
     ? exhaustiveJob.mutation_score
     : (primaryJob?.estimated_score ?? primaryJob?.mutation_score ?? 0);
@@ -196,8 +209,8 @@ export default function Results() {
                 {l:'Mutants Tested',  v:`${primaryJob.executed_mutants ?? primaryJob.mutants_tested} / ${primaryJob.total_mutants}`, c:'var(--amber)'},
                 {l:'Execution Time',  v:`${primaryJob.execution_time_min ?? Math.round((primaryJob.execution_time_seconds??0)/60)} min`, c:'var(--blue)'},
                 {l:`Time Saved vs Exhaustive`, v:`${timeSavedPct}%`, c:'var(--green)'},
-                {l:`Exhaustive Score (${baselineLabel})`, v:`${(baselineScore*100||baselineScore).toFixed?.(1) ?? baselineScore}%`, c:baselineColor},
-                {l:`Correlation (${baselineLabel})`, v:String(correlation), c: hasGroundTruth?'var(--green)':'var(--amber)'},
+                {l:`Exhaustive Score (${baselineLabel})`, v:`${(baselineScore <= 1 ? (baselineScore*100).toFixed(1) : baselineScore.toFixed(1))}%`, c:baselineColor},
+                {l:`Correlation (${baselineLabel})`, v: hasGroundTruth && typeof correlation === 'number' ? correlation.toFixed(2) : String(correlation), c: hasGroundTruth?'var(--green)':'var(--amber)'},
               ].map(({l,v,c})=>(
                 <div key={l} className="stat-card" style={{textAlign:'center'}}>
                   <div className="stat-label">{l}</div>
@@ -221,7 +234,7 @@ export default function Results() {
         )}
 
         {/* Exhaustive job still running notice */}
-        {exhaustiveJob && exhaustiveJob.status !== 'COMPLETED' && (
+        {exhaustiveJob && exhaustiveJob.status?.toUpperCase() !== 'COMPLETED' && (
           <Alert type="warn">
             ⏳ Exhaustive baseline is still running ({exhaustiveJob.status}). Refresh to update ground-truth figures.
           </Alert>

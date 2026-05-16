@@ -133,6 +133,7 @@ export function NewSessionUpload() {
       setSession(s);
       if (s.upload_path && s.status !== 'not_started') setUploadDone(true);
       if (s.foss_project_id) { setTab('foss'); setUploadDone(true); }
+      if (s.language)         { setFossFilter(s.language); }
     }).catch(err => {
       if (err?.response?.status === 404 || err?.response?.status === 403)
         nav('/dashboard');
@@ -205,14 +206,7 @@ export function NewSessionUpload() {
               <p style={{ fontSize:13,color:'var(--gray-500)',marginBottom:12 }}>
                 Select a pre-loaded open-source project. These have pre-computed exhaustive baselines for ground-truth comparison.
               </p>
-              <div style={{ display:'flex',gap:8,marginBottom:12 }}>
-                {['all','java','javascript'].map(f=>(
-                  <button key={f} className={`btn btn-sm ${fossFilter===f?'btn-primary':'btn-secondary'}`}
-                    onClick={()=>setFossFilter(f)}>
-                    {f==='all'?'All':f==='java'?'☕ Java':'🟨 JavaScript'}
-                  </button>
-                ))}
-              </div>
+              {/* Language filter hidden — determined by Step 1 selection */}
               <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:10,maxHeight:380,overflowY:'auto' }}>
                 {fossProjects
                   .filter(p => fossFilter==='all' || p.language===fossFilter)
@@ -359,15 +353,31 @@ export function NewSessionOperators() {
   const { id } = useParams();
   const nav    = useNavigate();
   const [session, setSession] = useState(null);
-  const [selected, setSelected] = useState(new Set(OPERATORS.map(o=>o.code)));
+  const [selected, setSelected] = useState(new Set());
+  const [availableOps, setAvailableOps] = useState(OPERATORS);
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     getSession(id).then(s => {
       setSession(s);
+      const lang = s.language || 'javascript';
+      // Show only operators supported by the selected language's framework
+      const available = OPERATORS.filter(o =>
+        o.framework === 'both' ||
+        (lang === 'java'       && o.framework === 'java') ||
+        (lang === 'javascript' && o.framework === 'js')
+      );
+      setAvailableOps(available);
       if (s.selected_operators) {
-        try { setSelected(new Set(JSON.parse(s.selected_operators))); } catch {}
+        try {
+          const ops = JSON.parse(s.selected_operators);
+          const validCodes = new Set(available.map(o => o.code));
+          setSelected(new Set(ops.filter(o => validCodes.has(o))));
+        } catch {}
+      } else {
+        // Default: select all High effectiveness operators for this language
+        setSelected(new Set(available.filter(o => o.lvl === 'High').map(o => o.code)));
       }
     }).catch(err => { if(!err?.response?.status || err?.response?.status===404 || err?.response?.status===403) nav('/dashboard'); });
   }, [id]);
@@ -403,7 +413,7 @@ export function NewSessionOperators() {
           {/* FR074 — Select/Deselect all */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex gap-2">
-              <button className="btn btn-outline btn-sm" onClick={()=>setSelected(new Set(OPERATORS.map(o=>o.code)))}>Select All</button>
+              <button className="btn btn-outline btn-sm" onClick={()=>setSelected(new Set(availableOps.map(o=>o.code)))}>Select All</button>
               <button className="btn btn-outline-gray btn-sm" onClick={()=>setSelected(new Set())}>Deselect All</button>
             </div>
             {/* FR075 — Count */}
@@ -417,7 +427,7 @@ export function NewSessionOperators() {
             <Alert type="warn">Warning: Selecting very few operators may result in limited test suite quality assessment.</Alert>
           )}
 
-          {OPERATORS.map(op => (
+          {OPERATORS.filter(op => availableOps.some(a => a.code === op.code)).map(op => (
             <div key={op.code} className={`op-item ${selected.has(op.code)?'checked':''}`}
               onClick={()=>toggle(op.code)}>
               <input type="checkbox" checked={selected.has(op.code)} onChange={()=>toggle(op.code)}

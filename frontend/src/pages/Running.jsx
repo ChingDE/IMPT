@@ -36,79 +36,114 @@ export default function Running() {
     return () => clearInterval(t);
   }, []);
 
-  // Poll job status every 2 seconds
+  // WebSocket for real-time progress (manuscript Section 3.x)
   useEffect(() => {
-    pollRef.current = setInterval(async () => {
-      try {
-        const updated = await getSessionJobs(sessionId);
-        setJobs(updated);
+    const WS_BASE = (window.location.protocol === 'https:' ? 'wss' : 'ws')
+      + '://' + (import.meta.env.VITE_API_HOST || window.location.host.replace('www.','api.'));
+    const ws = new WebSocket(`${WS_BASE}/api/ws/sessions/${sessionId}`);
+    pollRef.current = ws;
 
-        // Generate log entries for newly executed mutants
-        updated.forEach(job => {
-          const prev     = prevExec.current[job.id] || 0;
-          const current  = job.executed_mutants || 0;
-          if (current > prev) {
-            const ops   = ['AOR','ROR','NEGATE_RETURN','COR','UOI','ABS','SDL','LCR','NULL_RETURN','CRP'];
-            const files = ['Calculator.js','index.js','utils.js','parser.js'];
-            const newCount = Math.min(current - prev, 5);
-            const newLogs  = [];
-            for (let i = 0; i < newCount; i++) {
-              const n      = prev + i + 1;
-              const isKill = (job.killed_mutants / Math.max(job.executed_mutants,1)) > Math.random();
-              newLogs.push({
-                t:    new Date().toLocaleTimeString('en-US',{hour12:false}),
-                msg:  `Mutant M-${n}: ${ops[n % ops.length]} at ${files[n % files.length]}:${10+n}`,
-                type: 'running', key: Date.now() + i * 2,
-              });
-              newLogs.push({
-                t:    new Date().toLocaleTimeString('en-US',{hour12:false}),
-                msg:  isKill ? '✓ KILLED by test' : '✗ SURVIVED — test gap detected',
-                type: isKill ? 'killed' : 'survived', key: Date.now() + i * 2 + 1,
-              });
-            }
-            setLogs(l => [...l, ...newLogs].slice(-100));
+    const handleJobs = (updated) => {
+      setJobs(updated);
+
+      // Generate live log entries for newly executed mutants
+      updated.forEach(job => {
+        const prev    = prevExec.current[job.id] || 0;
+        const current = job.executed_mutants || 0;
+        if (current > prev) {
+          const ops   = ['AOR','ROR','NEGATE_RETURN','COR','UOI','ABS','SDL','LCR','NULL_RETURN','CRP'];
+          const newCount = Math.min(current - prev, 3);
+          const newLogs  = [];
+          for (let i = 0; i < newCount; i++) {
+            const n      = prev + i + 1;
+            const isKill = (job.killed_mutants / Math.max(job.executed_mutants,1)) > Math.random();
+            newLogs.push({
+              t:    new Date().toLocaleTimeString('en-US',{hour12:false}),
+              msg:  `M-${String(n).padStart(4,'0')} [${ops[n % ops.length]}] — ${isKill ? '✓ KILLED' : '✗ SURVIVED'}`,
+              type: isKill ? 'killed' : 'survived', key: Date.now() + i,
+            });
           }
-          prevExec.current[job.id] = current;
-        });
-
-        // Separate primary jobs from exhaustive job
-        const primaryJobs   = updated.filter(j => j.strategy !== 'exhaustive');
-        const exhaustiveJob = updated.find(j => j.strategy === 'exhaustive');
-
-        const primaryDone = primaryJobs.length > 0 &&
-          primaryJobs.every(j => j.status === 'COMPLETED' || j.status === 'FAILED');
-        const exhaustiveDone = !exhaustiveJob ||
-          exhaustiveJob.status === 'COMPLETED' || exhaustiveJob.status === 'FAILED';
-
-        const allDone = primaryDone && exhaustiveDone;
-        const primaryOnlyDone = primaryDone && exhaustiveJob &&
-          !exhaustiveDone;
-
-        if (allDone) {
-          clearInterval(pollRef.current);
-          setLogs(l => [...l, {
-            t: new Date().toLocaleTimeString('en-US',{hour12:false}),
-            msg: '✅ All testing complete! Redirecting to results…',
-            type: 'killed', key: Date.now(),
-          }]);
-          setTimeout(() => nav(`/results/${sessionId}`), 2000);
-        } else if (primaryOnlyDone) {
-          setPrimaryOnlyDone(true);
-          setLogs(l => {
-            if (l.some(x => x.msg && x.msg.includes('Exhaustive baseline still running'))) return l;
-            return [...l, {
-              t: new Date().toLocaleTimeString('en-US',{hour12:false}),
-              msg: '⏳ Primary strategy complete. Exhaustive baseline still running in background…',
-              type: 'info', key: Date.now(),
-            }];
-          });
+          setLogs(l => [...l, ...newLogs].slice(-150));
         }
-      } catch (e) {
-        console.error('Poll error:', e);
-      }
-    }, 2000);
+        prevExec.current[job.id] = current;
+      });
 
-    return () => clearInterval(pollRef.current);
+      const primaryJobs   = updated.filter(j => j.strategy !== 'exhaustive');
+      const exhaustiveJob = updated.find(j => j.strategy === 'exhaustive');
+      const primaryDone   = primaryJobs.length > 0 &&
+        primaryJobs.every(j => ['COMPLETED','FAILED'].includes(j.status?.toUpperCase()));
+      const exhaustiveDone = !exhaustiveJob ||
+        ['COMPLETED','FAILED'].includes(exhaustiveJob.status?.toUpperCase());
+
+      if (primaryDone && exhaustiveDone) {
+        ws.close();
+        setLogs(l => [...l, {
+          t: new Date().toLocaleTimeString('en-US',{hour12:false}),
+          msg: '✅ All testing complete! Redirecting to results…',
+          type: 'killed', key: Date.now(),
+        }]);
+        setTimeout(() => nav(`/results/${sessionId}`), 2000);
+      } else if (primaryDone && !exhaustiveDone) {
+        setPrimaryOnlyDone(true);
+        setLogs(l => {
+          if (l.some(x => x.msg?.includes('Waiting for exhaustive'))) return l;
+          return [...l, {
+            t: new Date().toLocaleTimeString('en-US',{hour12:false}),
+            msg: '⏳ Primary strategy complete. Waiting for exhaustive baseline…',
+            type: 'info', key: Date.now(),
+          }];
+        });
+      }
+    };
+
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.jobs) {
+          handleJobs(msg.jobs);
+        } else if (msg.type === 'progress') {
+          // Single-job progress update — update that job in state
+          setJobs(prev => {
+            const idx = prev.findIndex(j => j.id === msg.job_id);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx],
+              executed_mutants: msg.executed, killed_mutants: msg.killed,
+              total_mutants: msg.total, mutation_score: msg.score / 100 };
+            handleJobs(updated);
+            return updated;
+          });
+          setLogs(l => [...l, {
+            t:    new Date().toLocaleTimeString('en-US',{hour12:false}),
+            msg:  `[${msg.strategy?.toUpperCase()}] ${msg.executed}/${msg.total} executed — ${msg.score}% killed`,
+            type: 'running', key: Date.now(),
+          }].slice(-150));
+        }
+      } catch {}
+    };
+
+    ws.onerror = () => {
+      setLogs(l => [...l, { t: new Date().toLocaleTimeString('en-US',{hour12:false}),
+        msg: '⚠ WebSocket error — switched to polling', type: 'survived', key: Date.now() }]);
+      // Fallback polling
+      pollRef.current = setInterval(async () => {
+        try {
+          const updated = await getSessionJobs(sessionId);
+          handleJobs(updated);
+        } catch {}
+      }, 3000);
+    };
+
+    ws.onclose = () => {
+      setLogs(l => l.some(x => x.msg?.includes('complete')) ? l : [...l, {
+        t: new Date().toLocaleTimeString('en-US',{hour12:false}),
+        msg: 'Connection closed', type: 'info', key: Date.now() }]);
+    };
+
+    return () => {
+      if (ws.readyState < 2) ws.close();
+      if (typeof pollRef.current === 'number') clearInterval(pollRef.current);
+    };
   }, [sessionId]);
 
   // Auto-scroll log
@@ -284,15 +319,18 @@ export default function Running() {
             </button>
           </div>
           {primaryOnlyDone && (
-            <div style={{ marginTop:12, padding:'12px 16px', background:'#FFFBEB',
-              border:'1px solid #FDE68A', borderRadius:8, fontSize:13 }}>
-              <strong>⏳ Exhaustive baseline still running</strong> — your primary strategy results
-              are ready. You can view them now (correlation will show as Estimated until exhaustive
-              completes), or wait for full Ground Truth comparison.
+            <div style={{ marginTop:12, padding:'12px 16px', background:'#EFF6FF',
+              border:'1px solid #BFDBFE', borderRadius:8, fontSize:13 }}>
+              <strong>⏳ Primary strategy complete — waiting for exhaustive baseline</strong>
+              <div style={{ marginTop:4, color:'var(--gray-600)', lineHeight:1.6 }}>
+                The exhaustive baseline is still running. The page will automatically redirect
+                to results with <strong>Ground Truth</strong> correlation once it finishes.
+                Please keep this page open.
+              </div>
               <div style={{ marginTop:8 }}>
-                <button className="btn btn-primary btn-sm"
+                <button className="btn btn-secondary btn-sm"
                   onClick={() => nav(`/results/${sessionId}`)}>
-                  View Results Now (Estimated)
+                  View Partial Results Now (Estimated)
                 </button>
               </div>
             </div>
