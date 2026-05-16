@@ -72,6 +72,44 @@ class PITAdapter:
                 log.info("Using existing writable workdir: %s", work_dir)
             return work_dir
 
+    # Per-project overrides for FOSS projects with non-standard builds.
+    # Keys match the directory name (slug). Values are dicts with:
+    #   build:    'maven' | 'gradle'
+    #   submodule: Maven -pl argument for multi-module projects
+    #   target_classes: PIT targetClasses glob (overrides auto-detect)
+    #   target_tests:   PIT targetTests glob (overrides auto-detect)
+    FOSS_PROJECT_CONFIGS: dict = {
+        # ── Multi-module Maven ────────────────────────────────────────────────
+        "assertj": {
+            "build": "maven",
+            "submodule": "assertj-core",
+            "target_classes": "org.assertj.core.*",
+            "target_tests":   "org.assertj.core.*",
+        },
+        "commons-math": {
+            "build": "maven",
+            "submodule": "commons-math-legacy",
+            "target_classes": "org.apache.commons.math4.*",
+            "target_tests":   "org.apache.commons.math4.*",
+        },
+        # ── Gradle projects ───────────────────────────────────────────────────
+        "rxjava": {
+            "build": "gradle",
+            "target_classes": "io.reactivex.rxjava3.*",
+            "target_tests":   "io.reactivex.rxjava3.*",
+        },
+        "mockito": {
+            "build": "gradle",
+            "target_classes": "org.mockito.*",
+            "target_tests":   "org.mockito.*",
+        },
+    }
+
+    def _get_project_config(self) -> dict:
+        """Return FOSS override config for this project, or empty dict."""
+        slug = self.project_dir.name
+        return self.FOSS_PROJECT_CONFIGS.get(slug, {})
+
     def run(self) -> List[Mutant]:
         if self.use_docker:
             self._run_docker()
@@ -95,39 +133,58 @@ class PITAdapter:
 
     def _run_docker(self) -> None:
         """Two-phase execution: resolve deps with network, then run PIT without."""
+        cfg = self._get_project_config()
+        is_gradle = cfg.get("build") == "gradle" or (
+            not (self.project_dir / "pom.xml").exists() and
+            (self.project_dir / "build.gradle").exists() or
+            (self.project_dir / "build.gradle.kts").exists()
+        )
+
+        if is_gradle:
+            self._run_docker_gradle(cfg)
+            return
+
+        submodule  = cfg.get("submodule")
+        tgt_cls    = cfg.get("target_classes")
+        tgt_tests  = cfg.get("target_tests")
+
         # Phase 1: Download all dependencies (with network)
         log.info("Phase 1: Resolving Maven dependencies (network enabled)…")
+        resolve_args = []
+        if submodule:
+            resolve_args += ["-pl", submodule, "-am"]
         resolve_cmd = self._docker_base(network="bridge") + [
             "mvn", "dependency:resolve",
             "org.pitest:pitest-maven:1.15.3:mutationCoverage",
-            "-DskipTests",
-            "-DfailWhenNoMutations=false",
+            "-DskipTests", "-DfailWhenNoMutations=false",
             "--batch-mode", "-q",
-        ]
+        ] + resolve_args
         try:
-            result = subprocess.run(resolve_cmd, timeout=600,
-                                    capture_output=True, text=True)
+            subprocess.run(resolve_cmd, timeout=600, capture_output=True, text=True)
             log.info("Maven dependency resolution complete")
         except subprocess.CalledProcessError as e:
-            log.warning("Dependency resolution had warnings (may still work): %s",
-                        (e.stderr or "")[-300:])
+            log.warning("Dependency resolution had warnings: %s", (e.stderr or "")[-300:])
 
         # Phase 2: Run PIT mutation testing (no network needed)
         log.info("Phase 2: Running PIT mutation testing (network disabled)…")
-        pit_cmd = self._docker_base(network="none") + [
+        pit_args = [
             "mvn", "org.pitest:pitest-maven:mutationCoverage",
             "-DtimestampedReports=false",
             "-DoutputFormats=XML",
             "-DmutationThreshold=0",
             "-DfailWhenNoMutations=false",
-            # Tier 1 equivalent mutant detection (manuscript Section 3.5.x):
-            # detectInlinedCode — marks compiler-inlined mutations NON_VIABLE
-            # +FANN (Fast Approximate Non-Null) — detects null-check equivalents
-            # +FINULL (Fast Incremental Null) — detects null-dereference equivalents
             "-DdetectInlinedCode=true",
             "-DfeaturesOverride=+FANN,+FINULL",
             "--batch-mode",
         ]
+        if submodule:
+            pit_args += ["-pl", submodule, "-am"]
+        if tgt_cls:
+            pit_args += [f"-DtargetClasses={tgt_cls}"]
+        if tgt_tests:
+            pit_args += [f"-DtargetTests={tgt_tests}"]
+
+        pit_cmd = self._docker_base(network="none") + pit_args
         try:
             result = subprocess.run(pit_cmd, check=True, timeout=3600,
                                     capture_output=True, text=True)
@@ -135,6 +192,55 @@ class PITAdapter:
         except subprocess.CalledProcessError as e:
             output = (e.stdout or "") + (e.stderr or "")
             log.error("PIT failed: %s", output[-1000:])
+            if self._find_report():
+                log.warning("PIT exited with error but report found — proceeding")
+            else:
+                raise
+
+    def _run_docker_gradle(self, cfg: dict) -> None:
+        """Run PIT via Gradle for projects like RxJava and Mockito."""
+        tgt_cls   = cfg.get("target_classes", "*")
+        tgt_tests = cfg.get("target_tests",   "*")
+
+        # Phase 1: Download deps with network
+        log.info("Phase 1: Resolving Gradle dependencies (network enabled)…")
+        resolve_cmd = self._docker_base(network="bridge") + [
+            "sh", "-c",
+            "chmod +x gradlew 2>/dev/null || true && "
+            "./gradlew dependencies --no-daemon -q 2>&1 | tail -5",
+        ]
+        try:
+            subprocess.run(resolve_cmd, timeout=600, capture_output=True, text=True)
+            log.info("Gradle dependency resolution complete")
+        except Exception as e:
+            log.warning("Gradle dependency resolution warning: %s", e)
+
+        # Phase 2: Inject PIT plugin and run (no network)
+        # We inject a pitest block into build.gradle if not already present
+        inject_script = (
+            "chmod +x gradlew 2>/dev/null || true && "
+            "if ! grep -q 'pitest' build.gradle 2>/dev/null && "
+            "   ! grep -q 'pitest' build.gradle.kts 2>/dev/null; then "
+            "  echo \"\nbuildscript { dependencies { classpath 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:1.15.0' } }\" >> build.gradle 2>/dev/null || true; "
+            "  echo \"apply plugin: 'info.solidsoft.pitest'\n"
+            f"pitest {{ targetClasses = ['{tgt_cls}'] targetTests = ['{tgt_tests}'] "
+            "outputFormats = ['XML'] timestampedReports = false failWhenNoMutations = false }\" "
+            ">> build.gradle 2>/dev/null || true; "
+            "fi && "
+            "./gradlew pitest --no-daemon 2>&1 | tail -30"
+        )
+        pit_cmd = self._docker_base(network="none") + ["sh", "-c", inject_script]
+        try:
+            result = subprocess.run(pit_cmd, check=True, timeout=3600,
+                                    capture_output=True, text=True)
+            log.info("Gradle PIT completed successfully")
+        except subprocess.CalledProcessError as e:
+            output = (e.stdout or "") + (e.stderr or "")
+            log.error("Gradle PIT failed: %s", output[-1000:])
+            if self._find_report():
+                log.warning("PIT exited with error but report found — proceeding")
+            else:
+                raise
             # Check if report was generated despite error
             if self._find_report():
                 log.warning("PIT exited with error but report found — proceeding")
@@ -142,26 +248,50 @@ class PITAdapter:
                 raise
 
     def _run_local(self) -> None:
-        if (self.project_dir / "pom.xml").exists():
+        cfg = self._get_project_config()
+        is_gradle = cfg.get("build") == "gradle" or (
+            not (self.project_dir / "pom.xml").exists() and
+            ((self.project_dir / "build.gradle").exists() or
+             (self.project_dir / "build.gradle.kts").exists())
+        )
+        if is_gradle:
+            subprocess.run(["./gradlew", "pitest"], cwd=self.project_dir,
+                           check=True, timeout=3600)
+        else:
+            submodule = cfg.get("submodule")
+            tgt_cls   = cfg.get("target_classes")
+            tgt_tests = cfg.get("target_tests")
             cmd = ["mvn", "org.pitest:pitest-maven:mutationCoverage",
                    "-DtimestampedReports=false", "-DoutputFormats=XML",
                    "-DmutationThreshold=0", "-DfailWhenNoMutations=false",
                    "-DdetectInlinedCode=true", "-DfeaturesOverride=+FANN,+FINULL",
                    "--batch-mode"]
-        else:
-            cmd = ["./gradlew", "pitest"]
-        subprocess.run(cmd, cwd=self.project_dir, check=True, timeout=3600)
+            if submodule:
+                cmd += ["-pl", submodule, "-am"]
+            if tgt_cls:
+                cmd += [f"-DtargetClasses={tgt_cls}"]
+            if tgt_tests:
+                cmd += [f"-DtargetTests={tgt_tests}"]
+            subprocess.run(cmd, cwd=self.project_dir, check=True, timeout=3600)
 
     def _find_report(self) -> Optional[Path]:
-        candidates = [
-            self.project_dir / "target" / "pit-reports" / "mutations.xml",
-            self.project_dir / "build" / "reports" / "pitest" / "mutations.xml",
-        ]
-        for p in candidates:
-            if p.exists():
+        cfg       = self._get_project_config()
+        submodule = cfg.get("submodule")
+
+        search_roots = [self.project_dir]
+        if submodule:
+            search_roots.insert(0, self.project_dir / submodule)
+
+        for root in search_roots:
+            candidates = [
+                root / "target" / "pit-reports" / "mutations.xml",
+                root / "build" / "reports" / "pitest" / "mutations.xml",
+            ]
+            for p in candidates:
+                if p.exists():
+                    return p
+            for p in root.rglob("mutations.xml"):
                 return p
-        for p in self.project_dir.rglob("mutations.xml"):
-            return p
         return None
 
     def _parse_results(self) -> List[Mutant]:
