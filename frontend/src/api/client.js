@@ -18,6 +18,11 @@ client.interceptors.response.use(
       localStorage.removeItem('impt_token');
       window.location.href = '/login';
     }
+    if (err.response?.status === 403) {
+      // Unverified account or suspended — clear token and redirect
+      localStorage.removeItem('impt_token');
+      window.location.href = '/login?reason=unverified';
+    }
     return Promise.reject(err);
   }
 );
