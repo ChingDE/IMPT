@@ -119,17 +119,26 @@ export function AdminDashboard() {
           ))}
         </div>
 
-        {/* FR138 — Charts */}
-        {charts && (
-          <div className="card mb-4">
-            <div className="card-title" style={{marginBottom:16}}>📈 Activity — Last 14 Days</div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:24}}>
-              <MiniBarChart days={charts.days} values={charts.registrations} color="var(--blue)"       label="New Registrations / Day" />
-              <MiniBarChart days={charts.days} values={charts.sessions}      color="var(--purple-mid)" label="Testing Sessions / Day" />
-              <MiniLineChart days={charts.days} values={charts.avg_scores}   color="var(--green)"      label="Avg Mutation Score (%) / Day" />
-            </div>
-          </div>
-        )}
+        {/* FR138 — Charts (always shown, sparse data note when < 3 days) */}
+        <div className="card mb-4">
+          <div className="card-title" style={{marginBottom:16}}>📈 Activity — Last 14 Days</div>
+          {charts ? (
+            <>
+              {charts.sessions.filter(v=>v>0).length < 3 && (
+                <div style={{fontSize:12,color:'var(--amber)',marginBottom:12,padding:'6px 10px',background:'var(--amber-light)',borderRadius:6}}>
+                  ⚠ Not enough data yet to show a meaningful trend. Charts will fill in as more sessions are run.
+                </div>
+              )}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:24}}>
+                <MiniBarChart days={charts.days} values={charts.registrations} color="var(--blue)"       label="New Registrations / Day" />
+                <MiniBarChart days={charts.days} values={charts.sessions}      color="var(--purple-mid)" label="Testing Sessions / Day" />
+                <MiniLineChart days={charts.days} values={charts.avg_scores}   color="var(--green)"      label="Avg Mutation Score (%) / Day" />
+              </div>
+            </>
+          ) : (
+            <div style={{color:'var(--gray-400)',fontSize:13}}>Loading chart data…</div>
+          )}
+        </div>
 
         {/* FR137 — Activity feed */}
         <div className="card mb-4">
