@@ -431,7 +431,7 @@ export function AdminLogs() {
           onChange={e=>setSearch(e.target.value)} />}
       />
       <div className="page-content">
-        <button className="btn btn-secondary btn-sm mb-4" onClick={()=>nav('/admin')}>← Back</button>
+        <button className="btn btn-secondary btn-sm mb-4" onClick={()=>nav('/admin')}>← Back to Dashboard</button>
 
         {/* FR156 — Error alert */}
         {errCount > 0 && (
