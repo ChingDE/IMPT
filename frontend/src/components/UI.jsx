@@ -1,6 +1,6 @@
 // src/components/UI.jsx
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   Home, PlayCircle, BarChart2, Settings, Clock, Save, HelpCircle,
@@ -184,6 +184,22 @@ export function AppShell({ children }) {
           </div>
         </div>
       )}
+
+      {/* NFR072 — Privacy/Terms footer links accessible from all pages */}
+      <div style={{ position:'fixed', bottom:0, right:0, padding:'4px 12px',
+        fontSize:10, color:'var(--gray-400)', display:'flex', gap:12, zIndex:5,
+        background:'rgba(255,255,255,.8)', backdropFilter:'blur(4px)',
+        borderTop:'1px solid var(--gray-100)', borderLeft:'1px solid var(--gray-100)',
+        borderTopLeftRadius:8 }}>
+        <a href="/privacy" target="_blank" rel="noopener noreferrer"
+          style={{ color:'var(--gray-400)', textDecoration:'none' }}
+          onMouseOver={e=>e.target.style.color='var(--purple-mid)'}
+          onMouseOut={e=>e.target.style.color='var(--gray-400)'}>Privacy Policy</a>
+        <a href="/terms" target="_blank" rel="noopener noreferrer"
+          style={{ color:'var(--gray-400)', textDecoration:'none' }}
+          onMouseOver={e=>e.target.style.color='var(--purple-mid)'}
+          onMouseOut={e=>e.target.style.color='var(--gray-400)'}>Terms of Service</a>
+      </div>
     </div>
   );
 }
@@ -258,10 +274,31 @@ export function WizardHeader({ title, step, totalSteps, stepLabel, right }) {
 }
 
 // ── Alert ─────────────────────────────────────────────────────────
-export function Alert({ type = 'info', children }) {
+export function Alert({ type = 'info', children, onDismiss }) {
+  const [visible, setVisible] = useState(true);
   const icons = { info: Info, success: CheckCircle, error: XCircle, warn: AlertTriangle };
   const Icon = icons[type] || Info;
-  return <div className={`alert alert-${type}`}><Icon size={16} /><div>{children}</div></div>;
+
+  useEffect(() => {
+    // NFR042: auto-dismiss success messages after 5 seconds
+    if (type === 'success') {
+      const t = setTimeout(() => { setVisible(false); onDismiss?.(); }, 5000);
+      return () => clearTimeout(t);
+    }
+  }, [type]);
+
+  if (!visible) return null;
+
+  return (
+    <div className={`alert alert-${type}`} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <Icon size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+        <div>{children}</div>
+      </div>
+      <button onClick={() => { setVisible(false); onDismiss?.(); }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6, fontSize: 16, lineHeight: 1, padding: 0, flexShrink: 0 }}>×</button>
+    </div>
+  );
 }
 
 // ── InfoBox ───────────────────────────────────────────────────────

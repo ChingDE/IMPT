@@ -217,3 +217,33 @@ def send_session_complete_email(
     </div>
     """
     return _send(to, f"Results ready: {session_name}", _base_template(content))
+
+
+def send_admin_error_alert(error_type: str, message: str, detail: str = "") -> bool:
+    """
+    NFR036: Send critical error notification to admin email.
+    Triggered for: database connection failure, disk > 90%, crash, high error rate.
+    """
+    from config.settings import get_settings
+    s = get_settings()
+    admin_email = getattr(s, 'ADMIN_ALERT_EMAIL', None) or getattr(s, 'EMAIL_FROM', None)
+    if not admin_email:
+        log.warning("NFR036: ADMIN_ALERT_EMAIL not set — cannot send error alert")
+        return False
+
+    html = f"""
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#dc2626;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">
+        <h2 style="margin:0">⚠️ IMPT System Alert: {error_type}</h2>
+      </div>
+      <div style="background:#fff;border:1px solid #e5e7eb;padding:24px;border-radius:0 0 8px 8px">
+        <p><strong>Error:</strong> {message}</p>
+        {f'<pre style="background:#f3f4f6;padding:12px;border-radius:6px;font-size:12px;overflow:auto">{detail}</pre>' if detail else ''}
+        <p style="color:#6b7280;font-size:12px;margin-top:24px">
+          IMPT · NovaSoft · FEU Institute of Technology<br>
+          This is an automated alert. Do not reply to this email.
+        </p>
+      </div>
+    </div>
+    """
+    return _send(admin_email, f"[IMPT ALERT] {error_type}", html)

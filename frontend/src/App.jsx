@@ -24,6 +24,7 @@ import Reports from './pages/Reports';
 import Profile from './pages/Profile';
 import Help from './pages/Help';
 import { AdminDashboard, AdminUsers, AdminConfig, AdminLogs } from './pages/Admin';
+import { PrivacyPolicy, TermsOfService, MaintenancePage } from './pages/Legal';
 
 // Loading screen
 function Loading() {
@@ -98,6 +99,9 @@ export default function App() {
       <Route path="/reports"             element={<ProtectedRoute><Reports /></ProtectedRoute>} />
       <Route path="/profile"             element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="/help"                element={<ProtectedRoute><Help /></ProtectedRoute>} />
+      <Route path="/privacy"             element={<PrivacyPolicy />} />
+      <Route path="/terms"               element={<TermsOfService />} />
+      <Route path="/maintenance"         element={<MaintenancePage />} />
 
       {/* Admin routes */}
       <Route path="/admin"               element={<AdminRoute><AdminDashboard /></AdminRoute>} />
