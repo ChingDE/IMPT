@@ -376,7 +376,7 @@ async def admin_charts(
     """), {"cutoff": cutoff})
 
     score_rows = await db.execute(text("""
-        SELECT DATE(completed_at) as d, ROUND(AVG(mutation_score)*100, 1) as avg_score
+        SELECT DATE(completed_at) as d, ROUND(AVG(mutation_score)::numeric * 100, 1) as avg_score
         FROM mutation_jobs
         WHERE completed_at >= :cutoff
           AND status = 'COMPLETED'
