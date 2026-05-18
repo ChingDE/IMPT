@@ -68,20 +68,34 @@ async def admin_stats(
 
 @router.get("/health-metrics")
 async def health_metrics(current_admin: User = Depends(get_current_admin)):
-    """FR158: Server health metrics."""
+    """FR158 / NFR036: Server health metrics with critical alert on disk > 90%."""
     try:
         import psutil
         cpu    = psutil.cpu_percent(interval=0.1)
         memory = psutil.virtual_memory()
         disk   = shutil.disk_usage("/")
+        disk_pct = round(disk.used / disk.total * 100, 1)
+
+        # NFR036: alert admin if disk > 90%
+        if disk_pct > 90:
+            try:
+                from services.email import send_admin_error_alert
+                send_admin_error_alert(
+                    "Disk Space Critical",
+                    f"Server disk usage is at {disk_pct}% — immediate action required.",
+                    f"Used: {round(disk.used/(1024**3),1)} GB / Total: {round(disk.total/(1024**3),1)} GB"
+                )
+            except Exception:
+                pass  # Never break the health endpoint
+
         return {
-            "cpu_pct":    cpu,
-            "memory_pct": memory.percent,
-            "memory_used_gb": round(memory.used / (1024**3), 2),
-            "memory_total_gb": round(memory.total / (1024**3), 2),
-            "disk_pct":   round(disk.used / disk.total * 100, 1),
-            "disk_used_gb": round(disk.used / (1024**3), 2),
-            "disk_total_gb": round(disk.total / (1024**3), 2),
+            "cpu_pct":        cpu,
+            "memory_pct":     memory.percent,
+            "memory_used_gb": round(memory.used  / (1024**3), 2),
+            "memory_total_gb":round(memory.total / (1024**3), 2),
+            "disk_pct":       disk_pct,
+            "disk_used_gb":   round(disk.used  / (1024**3), 2),
+            "disk_total_gb":  round(disk.total / (1024**3), 2),
         }
     except ImportError:
         return {"error": "psutil not installed — install it for health metrics"}
@@ -94,10 +108,11 @@ async def list_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     search: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),   # verified | unverified | active | suspended
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """FR139–FR141: List all users with search."""
+    """FR139–FR141: List all users with search and status filter."""
     from sqlalchemy import select, or_
     from db.models.orm_models import User as U
     q = select(U).order_by(U.created_at.desc())
@@ -109,6 +124,14 @@ async def list_users(
             U.last_name.ilike(pattern),
             U.organization.ilike(pattern),
         ))
+    if status == "verified":
+        q = q.where(U.is_verified == True)
+    elif status == "unverified":
+        q = q.where(U.is_verified == False)
+    elif status == "active":
+        q = q.where(U.is_active == True)
+    elif status == "suspended":
+        q = q.where(U.is_active == False)
     q = q.offset(skip).limit(limit)
     r = await db.execute(q)
     return list(r.scalars().all())
@@ -322,3 +345,78 @@ async def export_logs_csv(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=audit_logs.csv"},
     )
+
+
+@router.get("/charts")
+async def admin_charts(
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """FR138: Time-series data for admin charts."""
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
+
+    # Last 14 days of user registrations and sessions per day
+    cutoff = datetime.utcnow() - timedelta(days=14)
+
+    reg_rows = await db.execute(text("""
+        SELECT DATE(created_at) as d, COUNT(*) as cnt
+        FROM users
+        WHERE created_at >= :cutoff
+        GROUP BY DATE(created_at)
+        ORDER BY d
+    """), {"cutoff": cutoff})
+
+    sess_rows = await db.execute(text("""
+        SELECT DATE(created_at) as d, COUNT(*) as cnt
+        FROM test_sessions
+        WHERE created_at >= :cutoff
+        GROUP BY DATE(created_at)
+        ORDER BY d
+    """), {"cutoff": cutoff})
+
+    score_rows = await db.execute(text("""
+        SELECT DATE(completed_at) as d, ROUND(AVG(mutation_score)*100, 1) as avg_score
+        FROM mutation_jobs
+        WHERE completed_at >= :cutoff
+          AND status = 'COMPLETED'
+          AND strategy != 'exhaustive'
+          AND mutation_score > 0
+        GROUP BY DATE(completed_at)
+        ORDER BY d
+    """), {"cutoff": cutoff})
+
+    # Build complete 14-day series (fill missing days with 0)
+    days = [(datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(13, -1, -1)]
+    reg_map   = {str(r[0]): r[1] for r in reg_rows.fetchall()}
+    sess_map  = {str(r[0]): r[1] for r in sess_rows.fetchall()}
+    score_map = {str(r[0]): float(r[1]) for r in score_rows.fetchall() if r[1] is not None}
+
+    return {
+        "days": days,
+        "registrations": [reg_map.get(d, 0) for d in days],
+        "sessions":      [sess_map.get(d, 0) for d in days],
+        "avg_scores":    [score_map.get(d) for d in days],  # None = no data that day
+    }
+
+
+@router.get("/recent-activity")
+async def recent_activity(
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """FR137: Recent activity feed (last 15 log entries)."""
+    repo = AuditLogRepository(db)
+    logs = await repo.list_recent(limit=15)
+    return [
+        {
+            "id":         l.id,
+            "created_at": l.created_at.isoformat(),
+            "level":      l.level,
+            "category":   l.category,
+            "action":     l.action,
+            "message":    l.message,
+            "outcome":    l.outcome,
+        }
+        for l in logs
+    ]

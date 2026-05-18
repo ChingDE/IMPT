@@ -160,10 +160,10 @@ def _mark_completed_sync(job_id: str, result: dict, records: list) -> None:
                     INSERT INTO mutant_records
                         (id, job_id, mutant_hash, operator, file, line,
                          original_code, mutated_code, status,
-                         priority_score, execution_time, explanation)
+                         priority_score, execution_time, explanation, killing_test)
                     VALUES
                         (:id, :job_id, :mh, :op, :file, :line,
-                         :orig, :mut, :status, :score, :etime, :expl)
+                         :orig, :mut, :status, :score, :etime, :expl, :kt)
                 """), {
                     "id":     str(uuid.uuid4()),
                     "job_id": job_id,
@@ -177,6 +177,7 @@ def _mark_completed_sync(job_id: str, result: dict, records: list) -> None:
                     "score":  rec.get("priority_score", 0.0),
                     "etime":  rec.get("execution_time", 0.0),
                     "expl":   (rec.get("explanation") or "")[:1000],
+                    "kt":     (rec.get("killing_test") or "")[:500] or None,
                 })
         engine.dispose()
         # Update global operator kill rates from this run's results
@@ -431,6 +432,7 @@ def _run_engine(job_id: str, config: dict) -> dict:
             "priority_score": m.priority_score,
             "execution_time": m.execution_time,
             "explanation":    (m.priority_explanation or "")[:1000],
+            "killing_test":   (getattr(m, "killing_test", None) or "")[:500] or None,
         }
         for m in result.executed_mutants
     ]

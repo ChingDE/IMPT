@@ -685,6 +685,9 @@ class StrykerAdapter:
                 # Stage 4: coveredBy is populated when coverageAnalysis='perTest'
                 covered_by    = rm.get("coveredBy") or []
                 test_coverage = set(str(t) for t in covered_by) if covered_by else set()
+                # killedBy is populated in Stryker v6+ when a mutant is killed
+                killed_by_raw = rm.get("killedBy") or []
+                killing_test  = killed_by_raw[0] if killed_by_raw else None
                 m = Mutant(
                     operator=op,
                     location=CodeLocation(
@@ -697,6 +700,8 @@ class StrykerAdapter:
                     test_coverage=test_coverage,
                 )
                 m.status = status
+                if killing_test:
+                    m.killing_test = killing_test
                 mutants.append(m)
             except Exception as e:
                 log.debug("Skipping mutant: %s", e)
