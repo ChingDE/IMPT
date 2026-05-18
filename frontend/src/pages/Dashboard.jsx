@@ -3,6 +3,94 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { listSessions, deleteSession, getDashboardStats, getTrend } from '../api/client';
+
+const STEPS = [
+  {
+    label: '1. Upload Project',
+    icon: '📁',
+    details: [
+      'Click New Test Session in the sidebar.',
+      'Enter a session name and select your language (Java or JavaScript).',
+      'Upload your project as a .zip file, or choose a FOSS project from the library.',
+      'Your zip must include pom.xml / build.gradle (Java) or package.json (JavaScript) at the root.',
+      'Maximum upload size is 50 MB.',
+    ],
+  },
+  {
+    label: '2. Configure Operators',
+    icon: '🔬',
+    details: [
+      'Select which mutation operators IMPT should apply to your code.',
+      'The default High Effectiveness set (AOR, ROR, NEGATE_RETURN, COR) is recommended for most projects.',
+      'Only operators compatible with your selected language are shown.',
+      'Hover over any operator for a plain-language description of what it changes.',
+    ],
+  },
+  {
+    label: '3. Set Time Budget',
+    icon: '⏱️',
+    details: [
+      'Use the slider to set how long IMPT may run (5–120 minutes).',
+      'IMPT selects the highest-priority mutants that fit within your budget.',
+      'Recommended: 15–20 min for a standard session, 30–60 min for thorough coverage.',
+      'Optionally enable the Exhaustive Baseline to get a ground-truth comparison score.',
+    ],
+  },
+  {
+    label: '4. Run Testing',
+    icon: '▶️',
+    details: [
+      'Review your full configuration on the Review step, then click Start Mutation Testing.',
+      'The session runs in the background — you can navigate away safely.',
+      'The live progress screen shows real-time phase indicators and mutant execution count.',
+      'You will be automatically redirected to your results when testing completes.',
+    ],
+  },
+  {
+    label: '5. View Results',
+    icon: '📊',
+    details: [
+      'The Results page shows your mutation score, mutants tested, time saved, and correlation.',
+      'The Prioritized Mutants table lists every executed mutant with its status (Killed / Survived).',
+      'Survived mutants are test gaps — they show the exact file and line where a test is missing.',
+      'Export your results as CSV, HTML report, or JSON for further analysis.',
+    ],
+  },
+];
+
+function QuickStartSteps() {
+  const [open, setOpen] = useState(null);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {STEPS.map((step, i) => {
+        const isOpen = open === i;
+        return (
+          <div key={i} style={{ background: '#fff', border: `1px solid ${isOpen ? 'var(--purple-mid)' : 'var(--purple-light)'}`,
+            borderRadius: 8, overflow: 'hidden', transition: 'border-color .15s' }}>
+            <button
+              onClick={() => setOpen(isOpen ? null : i)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer',
+                textAlign: 'left', gap: 12 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--gray-800)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>{step.icon}</span>{step.label}
+              </span>
+              <span style={{ color: 'var(--purple-mid)', fontSize: 14, transition: 'transform .2s',
+                transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', display: 'inline-block' }}>▼</span>
+            </button>
+            {isOpen && (
+              <ul style={{ margin: 0, padding: '0 16px 12px 40px', listStyle: 'disc' }}>
+                {step.details.map((d, j) => (
+                  <li key={j} style={{ fontSize: 13, color: 'var(--gray-600)', lineHeight: 1.7, marginBottom: 2 }}>{d}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 import { AppShell, PageHeader, StatusBadge, Alert, TrendChart, ConfirmModal } from '../components/UI';
 
 export default function Dashboard() {
@@ -67,15 +155,9 @@ export default function Dashboard() {
           <div className="card mb-4" style={{ background: 'var(--purple-xlight)', borderColor: 'var(--purple-light)' }}>
             <div className="card-title">🚀 Quick Start Guide</div>
             <p style={{ fontSize: 13.5, color: 'var(--gray-600)', marginBottom: 14, lineHeight: 1.65 }}>
-              Welcome to IMPT! Here's how to run your first mutation test:
+              Welcome to IMPT! Click any step to learn what to do.
             </p>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              {['1. Upload Project', '2. Configure Operators', '3. Set Time Budget', '4. Run Testing', '5. View Results'].map((s, i) => (
-                <div key={i} style={{ background: '#fff', border: '1px solid var(--purple-light)', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 500 }}>
-                  {s}
-                </div>
-              ))}
-            </div>
+            <QuickStartSteps />
             <button className="btn btn-primary mt-3" onClick={() => nav('/new-session')}>
               🚀 Start Your First Test
             </button>

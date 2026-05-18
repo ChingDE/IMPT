@@ -14,11 +14,12 @@ client.interceptors.request.use(cfg => {
 client.interceptors.response.use(
   r => r,
   err => {
-    if (err.response?.status === 401) {
+    const onAuthPage = ['/login', '/admin-login', '/register'].some(p => window.location.pathname.startsWith(p));
+    if (err.response?.status === 401 && !onAuthPage) {
       localStorage.removeItem('impt_token');
       window.location.href = '/login';
     }
-    if (err.response?.status === 403) {
+    if (err.response?.status === 403 && !onAuthPage) {
       // Unverified account or suspended — clear token and redirect
       localStorage.removeItem('impt_token');
       window.location.href = '/login?reason=unverified';
