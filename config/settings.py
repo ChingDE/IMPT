@@ -40,9 +40,10 @@ class Settings:
     )
 
     # ── Email — Resend ─────────────────────────────────────────────────
-    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
-    EMAIL_FROM: str     = os.getenv("EMAIL_FROM", "IMPT <noreply@impt.it.com>")
-    EMAIL_ENABLED: bool = bool(os.getenv("RESEND_API_KEY", ""))
+    RESEND_API_KEY:     str  = os.getenv("RESEND_API_KEY", "")
+    EMAIL_FROM:         str  = os.getenv("EMAIL_FROM", "IMPT <noreply@impt.it.com>")
+    EMAIL_ENABLED:      bool = bool(os.getenv("RESEND_API_KEY", ""))
+    ADMIN_ALERT_EMAIL:  str  = os.getenv("ADMIN_ALERT_EMAIL", "")
 
     # ── Token expiry ───────────────────────────────────────────────────
     EMAIL_VERIFICATION_EXPIRE_HOURS: int = int(
