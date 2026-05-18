@@ -145,6 +145,7 @@ class SessionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     language: str  # java | javascript
     description: Optional[str] = Field(default=None, max_length=500)
+    foss_project_id: Optional[str] = None
 
     @field_validator("name")
     @classmethod

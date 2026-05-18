@@ -213,12 +213,14 @@ class TestSessionRepository:
         name: str,
         language: str,
         description: Optional[str] = None,
+        foss_project_id: Optional[str] = None,
     ) -> TestSession:
         s = TestSession(
             owner_id=owner_id,
             name=name,
             language=language,
             description=description,
+            foss_project_id=foss_project_id,
             status="not_started",
         )
         self.db.add(s)

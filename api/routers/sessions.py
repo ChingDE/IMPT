@@ -64,6 +64,7 @@ async def create_session(
         name=payload.name,
         language=payload.language,
         description=payload.description,
+        foss_project_id=payload.foss_project_id,
     )
 
     await audit_repo.log(
