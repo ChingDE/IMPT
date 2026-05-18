@@ -74,7 +74,10 @@ export function AdminDashboard() {
 
   const refresh = () => {
     getAdminStats().then(setStats).catch(()=>{});
-    getAdminCharts().then(setCharts).catch(()=>{});
+    getAdminCharts().then(setCharts).catch(e => {
+      console.error('Charts failed:', e?.response?.status, e?.response?.data || e?.message);
+      setCharts({ days:[], registrations:[], sessions:[], avg_scores:[] });
+    });
     getRecentActivity().then(setActivity).catch(()=>{});
     getHealthMetrics().then(setHealth).catch(()=>{});
   };
@@ -122,7 +125,11 @@ export function AdminDashboard() {
         {/* FR138 — Charts (always shown, sparse data note when < 3 days) */}
         <div className="card mb-4">
           <div className="card-title" style={{marginBottom:16}}>📈 Activity — Last 14 Days</div>
-          {charts ? (
+          {charts && charts.days.length === 0 ? (
+            <div style={{color:'var(--amber)',fontSize:13,padding:'8px 12px',background:'var(--amber-light)',borderRadius:6}}>
+              ⚠ Chart data could not be loaded. Check the browser console for details.
+            </div>
+          ) : charts ? (
             <>
               {charts.sessions.filter(v=>v>0).length < 3 && (
                 <div style={{fontSize:12,color:'var(--amber)',marginBottom:12,padding:'6px 10px',background:'var(--amber-light)',borderRadius:6}}>
