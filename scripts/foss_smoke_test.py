@@ -41,12 +41,29 @@ async def create_session(client, base, token, name, foss_id, language):
         "name": name,
         "language": language,
         "foss_project_id": foss_id,
-        "selected_strategy": STRATEGY,
-        "time_budget_seconds": BUDGET_SECONDS,
-        "include_exhaustive": EXHAUSTIVE,
-        "selected_operators": JS_OPERATORS if language == "javascript" else JAVA_OPERATORS,
     }
     r = await client.post(f"{base}/api/sessions", headers=hdr(token), json=payload)
+    r.raise_for_status()
+    return r.json()
+
+async def configure_operators(client, base, token, session_id, language):
+    ops = JS_OPERATORS if language == "javascript" else JAVA_OPERATORS
+    r = await client.post(f"{base}/api/sessions/{session_id}/operators",
+        headers=hdr(token),
+        json={"selected_operators": ops})
+    r.raise_for_status()
+    return r.json()
+
+async def set_budget(client, base, token, session_id):
+    r = await client.post(f"{base}/api/sessions/{session_id}/budget",
+        headers=hdr(token),
+        json={
+            "time_budget_minutes": BUDGET_SECONDS // 60,
+            "selected_strategy": STRATEGY,
+            "run_exhaustive": EXHAUSTIVE,
+            "run_comparison": False,
+            "run_operator_based": False,
+        })
     r.raise_for_status()
     return r.json()
 
@@ -142,7 +159,29 @@ async def main():
                 results.append(row)
                 continue
 
-            # 2. Start session
+            # 2. Configure operators
+            try:
+                await configure_operators(client, base, token, sid, lang)
+                print(f"  Operators configured")
+            except Exception as e:
+                row["status"] = FAIL
+                row["error"]  = f"Configure operators failed: {e}"
+                print(f"  {FAIL} — {row['error']}")
+                results.append(row)
+                continue
+
+            # 3. Set time budget
+            try:
+                await set_budget(client, base, token, sid)
+                print(f"  Budget set ({BUDGET_SECONDS//60} min)")
+            except Exception as e:
+                row["status"] = FAIL
+                row["error"]  = f"Set budget failed: {e}"
+                print(f"  {FAIL} — {row['error']}")
+                results.append(row)
+                continue
+
+            # 4. Start session
             try:
                 await start_session(client, base, token, sid)
                 print(f"  Testing started…")
@@ -153,7 +192,7 @@ async def main():
                 results.append(row)
                 continue
 
-            # 3. Poll
+            # 5. Poll
             final = await poll_session(client, base, token, sid)
             elapsed = round(time.time() - t0)
             row["time_s"] = elapsed
