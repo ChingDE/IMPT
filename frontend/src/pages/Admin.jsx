@@ -10,19 +10,31 @@ import { AppShell, PageHeader, Alert, ConfirmModal } from '../components/UI';
 
 // ── Mini bar chart ────────────────────────────────────────────────
 function MiniBarChart({ days, values, color, label }) {
+  const [tip, setTip] = useState(null);
   const max = Math.max(...values, 1);
-  const W = 480, H = 72, PAD = 4;
+  const W = 600, H = 90, PAD = 4;
   const bw = (W - PAD * 2) / values.length - 2;
   return (
-    <div>
-      <div style={{ fontSize:11, color:'var(--gray-500)', marginBottom:4 }}>{label}</div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:72 }}>
+    <div style={{ position:'relative' }}>
+      <div style={{ fontSize:12, color:'var(--gray-600)', marginBottom:6, fontWeight:600 }}>{label}</div>
+      {tip && (
+        <div style={{ position:'absolute', top:20, left: tip.x, transform:'translateX(-50%)',
+          background:'var(--gray-800)', color:'#fff', padding:'3px 8px', borderRadius:4,
+          fontSize:11, whiteSpace:'nowrap', zIndex:10, pointerEvents:'none' }}>
+          {tip.date}: <strong>{tip.val}</strong>
+        </div>
+      )}
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:90 }}>
         {values.map((v, i) => {
           const bh = Math.max(2, (v / max) * (H - PAD * 2));
           const x  = PAD + i * ((W - PAD * 2) / values.length);
-          return <rect key={i} x={x} y={H - PAD - bh} width={bw} height={bh} rx={2} fill={color} opacity={0.8}>
-            <title>{days[i]}: {v}</title>
-          </rect>;
+          const cx = x + bw / 2;
+          const pct = tip && tip.idx === i ? 1 : 0.8;
+          return <rect key={i} x={x} y={H - PAD - bh} width={bw} height={bh} rx={2}
+            fill={color} opacity={tip && tip.idx === i ? 1 : 0.75}
+            style={{ cursor:'pointer', transition:'opacity .1s' }}
+            onMouseEnter={() => setTip({ idx:i, date:days[i]?.slice(5), val:v, x:`${(cx/W)*100}%` })}
+            onMouseLeave={() => setTip(null)} />;
         })}
       </svg>
       <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:'var(--gray-400)', marginTop:2 }}>
@@ -33,29 +45,43 @@ function MiniBarChart({ days, values, color, label }) {
 }
 
 function MiniLineChart({ days, values, color, label }) {
+  const [tip, setTip] = useState(null);
   const defined = values.filter(v => v != null);
   if (!defined.length) return (
     <div>
-      <div style={{ fontSize:11, color:'var(--gray-500)', marginBottom:4 }}>{label}</div>
-      <div style={{ height:72, display:'grid', placeItems:'center', color:'var(--gray-400)', fontSize:12 }}>No data yet</div>
+      <div style={{ fontSize:12, color:'var(--gray-600)', marginBottom:6, fontWeight:600 }}>{label}</div>
+      <div style={{ height:90, display:'grid', placeItems:'center', color:'var(--gray-400)', fontSize:12 }}>No data yet</div>
     </div>
   );
   const max = Math.max(...defined) + 5;
   const min = Math.max(0, Math.min(...defined) - 5);
-  const W = 480, H = 72, PAD = 6;
+  const W = 600, H = 90, PAD = 6;
   const pts = values.map((v, i) => {
     if (v == null) return null;
     const x = PAD + (i / (values.length - 1)) * (W - PAD * 2);
     const y = H - PAD - ((v - min) / (max - min || 1)) * (H - PAD * 2);
-    return [x, y];
+    return [x, y, i];
   });
-  const path = pts.filter(Boolean).map((p, i, arr) => `${i===0?'M':'L'}${p[0]},${p[1]}`).join(' ');
+  const validPts = pts.filter(Boolean);
+  const path = validPts.map((p, i) => `${i===0?'M':'L'}${p[0]},${p[1]}`).join(' ');
   return (
-    <div>
-      <div style={{ fontSize:11, color:'var(--gray-500)', marginBottom:4 }}>{label}</div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:72 }}>
+    <div style={{ position:'relative' }}>
+      <div style={{ fontSize:12, color:'var(--gray-600)', marginBottom:6, fontWeight:600 }}>{label}</div>
+      {tip && (
+        <div style={{ position:'absolute', top:20, left: tip.x, transform:'translateX(-50%)',
+          background:'var(--gray-800)', color:'#fff', padding:'3px 8px', borderRadius:4,
+          fontSize:11, whiteSpace:'nowrap', zIndex:10, pointerEvents:'none' }}>
+          {tip.date}: <strong>{tip.val}%</strong>
+        </div>
+      )}
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:90 }}>
         <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-        {pts.filter(Boolean).map(([x,y], i) => <circle key={i} cx={x} cy={y} r={3} fill={color} />)}
+        {validPts.map(([x,y,i]) => (
+          <circle key={i} cx={x} cy={y} r={tip?.idx===i ? 5 : 3}
+            fill={color} style={{ cursor:'pointer', transition:'r .1s' }}
+            onMouseEnter={() => setTip({ idx:i, date:days[i]?.slice(5), val:values[i], x:`${(x/W)*100}%` })}
+            onMouseLeave={() => setTip(null)} />
+        ))}
       </svg>
       <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:'var(--gray-400)', marginTop:2 }}>
         <span>{days[0]?.slice(5)}</span><span>{days[days.length-1]?.slice(5)}</span>
@@ -136,10 +162,10 @@ export function AdminDashboard() {
                   ⚠ Not enough data yet to show a meaningful trend. Charts will fill in as more sessions are run.
                 </div>
               )}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:24}}>
-                <MiniBarChart days={charts.days} values={charts.registrations} color="var(--blue)"       label="New Registrations / Day" />
-                <MiniBarChart days={charts.days} values={charts.sessions}      color="var(--purple-mid)" label="Testing Sessions / Day" />
-                <MiniLineChart days={charts.days} values={charts.avg_scores}   color="var(--green)"      label="Avg Mutation Score (%) / Day" />
+              <div style={{display:'flex',flexDirection:'column',gap:20}}>
+                <MiniBarChart  days={charts.days} values={charts.registrations} color="var(--blue)"       label="New Registrations / Day" />
+                <MiniBarChart  days={charts.days} values={charts.sessions}      color="var(--purple-mid)" label="Testing Sessions / Day" />
+                <MiniLineChart days={charts.days} values={charts.avg_scores}    color="var(--green)"      label="Avg Mutation Score (%) / Day" />
               </div>
             </>
           ) : (
@@ -165,7 +191,7 @@ export function AdminDashboard() {
                     <td><span style={{fontSize:11,fontWeight:700,color:lvlColor(a.level)}}>{a.level}</span></td>
                     <td><span className="badge badge-gray" style={{fontSize:10}}>{a.category}</span></td>
                     <td style={{fontSize:12}}>{a.action}</td>
-                    <td><span className={`badge ${a.outcome==='success'?'badge-green':'badge-red'}`} style={{fontSize:10}}>{a.outcome}</span></td>
+                    <td><span className={`badge ${a.outcome==='success'?'badge-green':'badge-red'}`} style={{fontSize:10}}>{a.outcome?a.outcome.charAt(0).toUpperCase()+a.outcome.slice(1):a.outcome}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -200,6 +226,7 @@ export function AdminDashboard() {
 
 // ── Admin Users ───────────────────────────────────────────────────
 export function AdminUsers() {
+  const nav = useNavigate();
   const [users,        setUsers]        = useState([]);
   const [search,       setSearch]       = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -228,6 +255,7 @@ export function AdminUsers() {
           onChange={e=>{setSearch(e.target.value);load(e.target.value,statusFilter)}} />}
       />
       <div className="page-content">
+        <button className="btn btn-secondary btn-sm mb-4" onClick={()=>nav('/admin')}>← Back to Dashboard</button>
         {msg && <div className="mb-3"><Alert type="success" onDismiss={()=>setMsg('')}>{msg}</Alert></div>}
 
         {/* FR141 — Filters (wired to backend) */}
@@ -300,6 +328,7 @@ export function AdminUsers() {
 
 // ── Admin Config ──────────────────────────────────────────────────
 export function AdminConfig() {
+  const nav = useNavigate();
   const [config, setConfig] = useState([]);
   const [edits,  setEdits]  = useState({});
   const [saved,  setSaved]  = useState('');
@@ -320,6 +349,7 @@ export function AdminConfig() {
     <AppShell>
       <PageHeader icon="⚙️" title="System Configuration" />
       <div className="page-content">
+        <button className="btn btn-secondary btn-sm mb-4" onClick={()=>nav('/admin')}>← Back to Dashboard</button>
 
         {/* FR149 — Registration toggle */}
         <div className="card mb-4" style={{borderLeft:'4px solid var(--amber)',background:'var(--amber-light)'}}>
@@ -450,7 +480,7 @@ export function AdminLogs() {
                   <td style={{fontSize:12,fontFamily:'var(--mono)'}}>{l.action}</td>
                   <td style={{fontSize:12,maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.message}>{l.message}</td>
                   <td style={{fontSize:11,color:'var(--gray-500)'}}>{l.ip_address||'—'}</td>
-                  <td><span className={`badge ${l.outcome==='success'?'badge-green':'badge-red'}`} style={{fontSize:10}}>{l.outcome}</span></td>
+                  <td><span className={`badge ${l.outcome==='success'?'badge-green':'badge-red'}`} style={{fontSize:10}}>{l.outcome?l.outcome.charAt(0).toUpperCase()+l.outcome.slice(1):l.outcome}</span></td>
                 </tr>
               ))}
               {filtered.length===0 && <tr><td colSpan={7} style={{textAlign:'center',padding:20,color:'var(--gray-400)'}}>No logs found</td></tr>}
