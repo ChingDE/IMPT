@@ -66,6 +66,7 @@ class Mutant:
     priority_score: float           = 0.0
     priority_explanation: str       = ""
     test_coverage:  Set[str]        = field(default_factory=set)
+    killing_test:   Optional[str]   = field(default=None)
 
     def __post_init__(self):
         raw = f"{self.operator.value}:{self.location.key()}:{self.original_code}:{self.mutated_code}"

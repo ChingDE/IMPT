@@ -75,6 +75,8 @@ export const deleteAccount  = ()  => client.delete('/api/users/me').then(r => r.
 
 // ── Admin ─────────────────────────────────────────────────────────
 export const getAdminStats    = ()         => client.get('/api/admin/stats').then(r => r.data);
+export const getAdminCharts   = ()         => client.get('/api/admin/charts').then(r => r.data);
+export const getRecentActivity= ()         => client.get('/api/admin/recent-activity').then(r => r.data);
 export const getHealthMetrics = ()         => client.get('/api/admin/health-metrics').then(r => r.data);
 export const listAdminUsers   = (p)        => client.get('/api/admin/users', { params: p }).then(r => r.data);
 export const getAdminUser     = (id)       => client.get(`/api/admin/users/${id}`).then(r => r.data);
