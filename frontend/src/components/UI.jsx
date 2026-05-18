@@ -21,7 +21,13 @@ export function Sidebar() {
   const nav = useNavigate();
   const loc = useLocation();
   const { user, signOut } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === 'true');
+
+  const toggleCollapsed = (val) => {
+    const next = typeof val === 'boolean' ? val : !collapsed;
+    setCollapsed(next);
+    localStorage.setItem('sidebar_collapsed', String(next));
+  };
 
   const navItems = [
     { path: '/dashboard',   label: 'Dashboard',         icon: Home },
@@ -128,7 +134,7 @@ export function Sidebar() {
             onClick={() => { signOut(); nav('/login'); }}>
             Sign out
           </button>
-          <button onClick={() => setCollapsed(true)}
+          <button onClick={() => toggleCollapsed(true)}
             style={{ marginTop: 8, width: '100%', background: 'none', border: 'none',
               cursor: 'pointer', color: 'var(--gray-400)', fontSize: 12,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '4px 0' }}>
@@ -145,7 +151,7 @@ export function Sidebar() {
               color: 'var(--gray-400)', padding: '6px' }}>
             ⏻
           </button>
-          <button title="Expand sidebar" onClick={() => setCollapsed(false)}
+          <button title="Expand sidebar" onClick={() => toggleCollapsed(false)}
             style={{ background: 'none', border: 'none', cursor: 'pointer',
               color: 'var(--gray-400)', padding: '4px', display: 'flex', alignItems: 'center' }}>
             <ChevronRight size={15} />
