@@ -74,23 +74,23 @@ write_config "validator-js" "module.exports = {
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── zod (Vitest — test script: yarn test:ts-jest) ────────────────────────────
+# ── zod (Vitest — source files at root level, not src/) ─────────────────────
 write_config "zod" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
   commandRunner: { command: 'node_modules/.bin/vitest run' },
-  mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts'],
+  mutate: ['**/*.ts', '!**/*.test.ts', '!**/*.spec.ts', '!node_modules/**', '!benchmarks/**', '!playground/**'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── axios (Mocha — test script: npm run test:mocha) ──────────────────────────
+# ── axios (Mocha — unit tests only with timeout) ────────────────────────────
 write_config "axios" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/mocha test/unit --recursive --exit' },
+  commandRunner: { command: 'node_modules/.bin/mocha test/unit --recursive --exit --timeout 10000' },
   mutate: ['lib/**/*.js', '!lib/**/*.test.js', '!lib/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -118,16 +118,22 @@ write_config "faker-js" "module.exports = {
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── ramda (Mocha — test script: npm-run-all spec lint) ───────────────────────
+# ── ramda (Mocha — correct test path is source/test/) ───────────────────────
 write_config "ramda" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/mocha --recursive source/__tests__ --exit' },
-  mutate: ['source/**/*.js', '!source/**/*.spec.js', '!source/**/*.test.js', '!source/__tests__/**'],
+  commandRunner: { command: 'node_modules/.bin/mocha --recursive source/test --exit --timeout 10000' },
+  mutate: ['source/**/*.js', '!source/test/**', '!source/__tests__/**', '!source/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
 echo ""
 echo "Done. Stryker override configs written for all 10 JS projects."
+
+# Clear cached Phase 1 reports so next run re-enumerates fresh
+for slug in zod faker-js date-fns axios ramda; do
+  rm -f "$TMP_DIR/$slug/reports/mutation/mutation.json"
+done
+echo "Cleared cached reports for updated configs."

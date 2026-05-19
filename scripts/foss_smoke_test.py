@@ -102,11 +102,15 @@ async def main():
     parser.add_argument("--url",   default="https://api.impt.it.com", help="API base URL")
     parser.add_argument("--token", required=True, help="Bearer token (login first)")
     parser.add_argument("--lang",  default="all", choices=["all","javascript","java"], help="Filter by language")
-    parser.add_argument("--slug",  default=None, help="Test a single FOSS project slug")
+    parser.add_argument("--slug",   default=None, help="Test a single FOSS project slug")
+    parser.add_argument("--budget", type=int, default=10, help="Time budget in minutes (default: 10)")
     args = parser.parse_args()
 
-    base  = args.url.rstrip("/")
-    token = args.token
+    base   = args.url.rstrip("/")
+    token  = args.token
+    global BUDGET_SECONDS, MAX_WAIT
+    BUDGET_SECONDS = args.budget * 60
+    MAX_WAIT       = max(BUDGET_SECONDS + 300, 900)
 
     results = []
     start_all = time.time()
