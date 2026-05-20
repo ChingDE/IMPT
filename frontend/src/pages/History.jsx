@@ -76,22 +76,29 @@ export default function History() {
 
   const exportCSV = () => {
     const rows = [
-      ['Session Name','Language','Date','Mutation Score','Mutants Tested','Total Mutants','Strategy','Time Saved'],
+      ['Session Name', 'Language', 'Date', 'Mutation Score (%)', 'Mutants Executed', 'Total Mutants', 'Strategy', 'Time Saved (%)'],
       ...filtered.map(s => [
-        s.name, s.language || '—',
-        new Date(s.updated_at||s.created_at).toLocaleString(),
-        s.mutation_score != null ? `${s.mutation_score}%` : '—',
-        s.executed_mutants ?? '—', s.total_mutants ?? '—',
+        s.name,
+        s.language || '—',
+        new Date(s.updated_at || s.created_at).toLocaleString(),
+        s.mutation_score != null ? s.mutation_score.toFixed(1) : '—',
+        s.executed_mutants ?? '—',
+        s.total_mutants ?? '—',
         s.selected_strategy || '—',
-        s.time_saved_pct != null ? `${s.time_saved_pct}%` : '—',
+        s.time_saved_pct != null ? s.time_saved_pct.toFixed(1) : '—',
       ])
     ];
-    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
-    a.download = `impt-test-history-${new Date().toISOString().slice(0,10)}.csv`;
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `impt-test-history-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
   };
 
   return (

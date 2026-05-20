@@ -4,6 +4,58 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getMyStats, updateMe, changePassword, deleteAccount } from '../api/client';
 import { AppShell, PageHeader, Alert, ConfirmModal } from '../components/UI';
+
+const NOTIF_ITEMS = [
+  { key: 'notif_session_complete', label: 'Email notification when a testing session completes',      defaultOn: true  },
+  { key: 'notif_security_alerts',  label: 'Security alerts (login from new location, failed attempts)', defaultOn: true  },
+  { key: 'notif_product_updates',  label: 'Product updates and new features',                          defaultOn: false },
+];
+
+function NotifToggles() {
+  const [prefs, setPrefs] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('notif_prefs') || '{}');
+      const defaults = Object.fromEntries(NOTIF_ITEMS.map(i => [i.key, i.defaultOn]));
+      return { ...defaults, ...stored };
+    } catch { return Object.fromEntries(NOTIF_ITEMS.map(i => [i.key, i.defaultOn])); }
+  });
+
+  const toggle = (key) => {
+    setPrefs(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      localStorage.setItem('notif_prefs', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  return (
+    <div>
+      {NOTIF_ITEMS.map(({ key, label }) => {
+        const on = !!prefs[key];
+        return (
+          <div key={key} style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+            padding:'10px 0', borderBottom:'1px solid var(--gray-100)', cursor:'pointer' }}
+            onClick={() => toggle(key)}>
+            <span style={{ fontSize:13.5, color: on ? 'var(--gray-800)' : 'var(--gray-400)', userSelect:'none' }}>{label}</span>
+            {/* Toggle pill */}
+            <div style={{
+              position:'relative', width:40, height:22, borderRadius:22, flexShrink:0,
+              background: on ? 'var(--purple-mid)' : 'var(--gray-300)',
+              transition:'background .2s',
+            }}>
+              <div style={{
+                position:'absolute', top:3, left: on ? 21 : 3,
+                width:16, height:16, borderRadius:'50%', background:'#fff',
+                boxShadow:'0 1px 3px rgba(0,0,0,.2)', transition:'left .2s',
+              }} />
+            </div>
+          </div>
+        );
+      })}
+      <div style={{fontSize:12,color:'var(--gray-400)',marginTop:8}}>Preferences saved locally to this browser.</div>
+    </div>
+  );
+}
 import { CheckCircle } from 'lucide-react';
 
 export default function Profile() {
@@ -137,30 +189,7 @@ export default function Profile() {
             <div style={{fontSize:13,color:'var(--gray-600)',marginBottom:12,lineHeight:1.55}}>
               Choose which email notifications you receive.
             </div>
-            {[
-              ['notif_session_complete', 'Email notification when a testing session completes'],
-              ['notif_security_alerts',  'Security alerts (login from new location, failed attempts)'],
-              ['notif_product_updates',  'Product updates and new features'],
-            ].map(([key, label]) => (
-              <div key={key} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--gray-100)'}}>
-                <span style={{fontSize:13.5}}>{label}</span>
-                <label style={{position:'relative',display:'inline-block',width:38,height:22,cursor:'pointer'}}>
-                  <input type="checkbox" defaultChecked={key !== 'notif_product_updates'}
-                    style={{opacity:0,width:0,height:0}}
-                    onChange={e => {
-                      const prefs = JSON.parse(localStorage.getItem('notif_prefs') || '{}');
-                      prefs[key] = e.target.checked;
-                      localStorage.setItem('notif_prefs', JSON.stringify(prefs));
-                    }}
-                  />
-                  <span style={{
-                    position:'absolute',inset:0,background:'var(--gray-300)',borderRadius:22,transition:'.3s',
-                    ':before': {content:'""'}
-                  }} />
-                </label>
-              </div>
-            ))}
-            <div style={{fontSize:12,color:'var(--gray-400)',marginTop:8}}>Preferences saved locally.</div>
+            <NotifToggles />
           </div>
 
           {/* FR132 — Delete account */}
