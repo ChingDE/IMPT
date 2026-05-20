@@ -377,8 +377,7 @@ class StrykerAdapter:
         if override_cfg.exists() and not mutate_override:
             test_runner, test_command, is_esm, src_pattern, excl = self._detect_project()
             name = "stryker.config.cjs" if is_esm else "stryker.config.js"
-            import shutil as _shutil
-            _shutil.copy2(str(override_cfg), str(self.project_dir / name))
+            (self.project_dir / name).write_text(override_cfg.read_text())
             log.info("Using FOSS override config: %s", override_cfg.name)
             return
         # Always regenerate config
@@ -508,8 +507,7 @@ class StrykerAdapter:
         if override_cfg.exists() and not mutate_override:
             test_runner, test_command, is_esm, src_pattern, excl = self._detect_project()
             name = "stryker.config.cjs" if is_esm else "stryker.config.js"
-            import shutil as _shutil
-            _shutil.copy2(str(override_cfg), str(self.project_dir / name))
+            (self.project_dir / name).write_text(override_cfg.read_text())
             log.info("Using FOSS override config: %s", override_cfg.name)
             return
         # Always regenerate config
