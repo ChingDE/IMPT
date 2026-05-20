@@ -54,10 +54,17 @@ class ExecutionTimeEstimator:
             return self._cache[cache_key]
 
         # manuscript lines 6-13: base time from project characteristics
+        # Logarithmic scaling of test execution time with LOC, following the
+        # empirical observation of Schuler & Zeller (2013) that mutation test
+        # execution cost scales sublinearly with codebase size.
+        # K coefficients calibrated to match linear formula at LOC=1000 baseline:
+        #   K_JS  = 0.012 × 1000 / ln(1001) ≈ 1.737
+        #   K_PIT = 0.015 × 1000 / ln(1001) ≈ 2.171
+        import math as _math
         if self.project.framework == MutationFramework.PIT:
-            base_time = 0.015 * self.project.loc       # Java: ~15ms per LOC
+            base_time = 2.1712 * _math.log1p(self.project.loc)   # Java
         else:
-            base_time = 0.012 * self.project.loc       # JS:   ~12ms per LOC
+            base_time = 1.7369 * _math.log1p(self.project.loc)   # JS / Stryker
 
         # manuscript line 13-14: test suite overhead — 50ms per test
         test_overhead = 0.05 * self.project.test_count
