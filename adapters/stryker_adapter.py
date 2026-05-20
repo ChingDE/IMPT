@@ -234,10 +234,16 @@ class StrykerAdapter:
         # This overrides the config mutate patterns for this run only
         mutate_arg = ",".join(patterns)
         self._ensure_config()  # reset to base config (no override)
-        # Clear old report
+        # Clear old report — use subprocess as fallback if file is root-owned
         report = self._find_report()
         if report:
-            report.unlink()
+            try:
+                report.unlink()
+            except PermissionError:
+                import subprocess as _sp
+                _sp.run(["rm", "-f", str(report)], check=False)
+                if report.exists():
+                    log.warning("Could not delete old report at %s — Phase 3 may use stale data", report)
         self._run_stryker_docker(
             extra_flags="--mutate " + mutate_arg
         )
