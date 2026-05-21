@@ -99,7 +99,6 @@ export default function History() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
-  };
 
   return (
     <AppShell>
