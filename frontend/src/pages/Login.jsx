@@ -46,7 +46,7 @@ export default function Login() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-logo">
-          <LogoMark size={64} />
+          <LogoMark size={28} />
           <div style={{ marginTop: 12 }}>
             <div className="auth-brand">NovaSoft</div>
             <div className="auth-sub">Innovation Software</div>
@@ -57,6 +57,11 @@ export default function Login() {
         {reason === 'unverified' && (
           <Alert type="warn">
             ⚠ Your account email is not yet verified. Please check your inbox for the verification link, then log in again.
+          </Alert>
+        )}
+        {reason === 'password_changed' && (
+          <Alert type="success">
+            ✓ Password changed successfully. Please log in with your new password.
           </Alert>
         )}
         {error && <Alert type={locked ? 'error' : attempts > 0 ? 'warn' : 'error'}>{error}</Alert>}

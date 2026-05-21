@@ -95,7 +95,9 @@ export default function Profile() {
     try {
       await changePassword(pw);
       setPw({current_password:'',new_password:'',confirm_password:''});
-      setPwSaved(true); setTimeout(()=>setPwSaved(false),2500);
+      setPwSaved(true);
+      // Sign out after 3 seconds so user confirms new password works on next login
+      setTimeout(() => { signOut(); nav('/login?reason=password_changed'); }, 3000);
     } catch (err) {
       setPwError(err.response?.data?.detail || 'Failed to change password.');
     }
@@ -168,7 +170,7 @@ export default function Profile() {
           <div className="card mb-4">
             <div className="card-title">🔒 Change Password</div>
             {pwError && <Alert type="error">{pwError}</Alert>}
-            {pwSaved && <Alert type="success">Password changed successfully.</Alert>}
+            {pwSaved && <Alert type="success">Password changed successfully. You will be logged out in 3 seconds — please log back in with your new password.</Alert>}
             <form onSubmit={handlePwChange}>
               {['current_password','new_password','confirm_password'].map(k=>(
                 <div className="form-group" key={k}>
