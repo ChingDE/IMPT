@@ -6,7 +6,7 @@ const BASE = import.meta.env.VITE_API_URL || '';
 const client = axios.create({ baseURL: BASE });
 
 client.interceptors.request.use(cfg => {
-  const token = localStorage.getItem('impt_token');
+  const token = sessionStorage.getItem('impt_token') || localStorage.getItem('impt_token');
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
   return cfg;
 });
