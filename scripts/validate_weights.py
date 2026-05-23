@@ -71,9 +71,24 @@ CONFIGS = {
     },
 }
 
-# Projects to use for exhaustive ground truth
-PROJECTS = ["ms", "uuid", "dayjs"]
-JS_OPERATORS = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
+# Default 15 projects for full validation (mathjs excluded — 38k mutants not feasible exhaustively)
+ALL_PROJECTS = [
+    # JavaScript (9 — excl. mathjs)
+    "ms", "uuid", "dayjs", "validator-js", "zod", "axios", "ramda", "faker-js", "date-fns",
+    # Java (6)
+    "gson", "commons-io", "jsoup", "mockito", "commons-collections", "joda-time",
+]
+PROJECTS = ALL_PROJECTS  # overridden by --projects flag at runtime
+JAVA_PROJECTS  = {"gson","commons-io","jsoup","mockito","commons-collections","commons-lang",
+                  "joda-time","assertj","rxjava","commons-math"}
+JS_OPERATORS   = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
+JAVA_OPERATORS = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
+
+def operators_for(slug):
+    return JAVA_OPERATORS if slug in JAVA_PROJECTS else JS_OPERATORS
+
+def language_for(slug):
+    return "java" if slug in JAVA_PROJECTS else "javascript"
 BUDGET_MINUTES = 10
 MAX_WAIT           = 900   # 15 min max wait per IMPT session
 MAX_WAIT_EXHAUSTIVE = 7200  # 2 hours max for exhaustive
@@ -101,22 +116,27 @@ async def get_foss_id(client, base, token, slug):
             return p["id"]
     raise ValueError(f"FOSS project '{slug}' not found")
 
-async def create_session(client, base, token, name, foss_id, weight_config=None, exhaustive=False):
+async def create_session(client, base, token, name, foss_id, slug,
+                         weight_config=None, exhaustive=False):
+    lang = language_for(slug)
+    ops  = operators_for(slug)
     r = await client.post(f"{base}/api/sessions", headers=hdr(token), json={
-        "name": name, "language": "javascript", "foss_project_id": foss_id,
+        "name": name, "language": lang, "foss_project_id": foss_id,
         "weight_config": weight_config,
     })
     r.raise_for_status()
     sid = r.json()["id"]
 
-    # Configure operators
     r2 = await client.post(f"{base}/api/sessions/{sid}/operators", headers=hdr(token),
-        json={"selected_operators": JS_OPERATORS})
+        json={"selected_operators": ops})
     r2.raise_for_status()
 
-    # Set budget — exhaustive uses impt strategy with run_exhaustive=True and large budget
+    # Java exhaustive needs a longer budget (PIT builds take longer)
+    budget = 180 if (exhaustive and lang == "java") else \
+             120 if exhaustive else \
+             BUDGET_MINUTES
     r3 = await client.post(f"{base}/api/sessions/{sid}/budget", headers=hdr(token), json={
-        "time_budget_minutes":  120 if exhaustive else BUDGET_MINUTES,
+        "time_budget_minutes":  budget,
         "selected_strategy":    "impt",
         "run_exhaustive":       exhaustive,
         "run_comparison":       False,
@@ -124,7 +144,6 @@ async def create_session(client, base, token, name, foss_id, weight_config=None,
     })
     r3.raise_for_status()
 
-    # Start
     r4 = await client.post(f"{base}/api/sessions/{sid}/start", headers=hdr(token))
     r4.raise_for_status()
     return sid
@@ -232,16 +251,39 @@ async def main():
     parser.add_argument("--token",    default=None, help="Initial bearer token")
     parser.add_argument("--email",    default="evaluator01@impt.it.com")
     parser.add_argument("--password", default="MFf0ABpZex")
+    parser.add_argument("--projects", default=None,
+        help="Comma-separated slugs, e.g. ms,uuid,dayjs  (default: all 15)")
     parser.add_argument("--skip-exhaustive", action="store_true",
-        help="Skip exhaustive runs (use if baselines already exist)")
+        help="Skip exhaustive baseline runs")
+    parser.add_argument("--exhaustive-only", action="store_true",
+        help="Run exhaustive baselines only — skip weight config experiments")
+    parser.add_argument("--weights-only", action="store_true",
+        help="Run weight config experiments only — skip exhaustive baselines")
     args = parser.parse_args()
     base = args.url.rstrip("/")
+
+    # Resolve project list
+    global PROJECTS
+    if args.projects:
+        PROJECTS = [s.strip() for s in args.projects.split(",")]
+    else:
+        PROJECTS = ALL_PROJECTS
+
+    # --weights-only implies --skip-exhaustive
+    if args.weights_only:
+        args.skip_exhaustive = True
+
+    js_count   = sum(1 for s in PROJECTS if s not in JAVA_PROJECTS)
+    java_count = sum(1 for s in PROJECTS if s in JAVA_PROJECTS)
+    est_hrs    = round((js_count * 1.0 + java_count * 1.5) / 1, 1)
 
     print(f"\n{'='*70}")
     print(f"  IMPT MCDM Weight Validation Experiment")
     print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M')}  |  {base}")
+    print(f"  Projects: {len(PROJECTS)} total  ({js_count} JS, {java_count} Java)")
     print(f"  Projects: {', '.join(PROJECTS)}")
     print(f"  Configurations: {len(CONFIGS)}")
+    print(f"  Estimated runtime: ~{est_hrs}–{est_hrs*1.5:.0f} hours (exhaustive + all configs)")
     print(f"{'='*70}\n")
 
     results = {}   # config_name -> {project_slug -> score}
@@ -275,13 +317,13 @@ async def main():
                 try:
                     sid = await create_session(client, base, token,
                         f"weight-val-exhaustive-{slug}-{datetime.now().strftime('%H%M%S')}",
-                        foss_ids[slug], exhaustive=True)
+                        foss_ids[slug], slug, exhaustive=True)
                     print(f"  [{slug}] Session {sid[:8]}… started — polling every {POLL_INTERVAL}s")
                     final = await poll(client, base, token, sid, max_wait=MAX_WAIT_EXHAUSTIVE)
                     if final and final.get("status") == "completed":
                         score = await get_exhaustive_score(client, base, token, sid)
                         exhaustive[slug] = score
-                        print(f"  [{slug}] Exhaustive score: {score:.1f}%")
+                        print(f"  [{slug}] Exhaustive score: {(score or 0)*100:.1f}%")
                     else:
                         print(f"  [{slug}] ⚠ Exhaustive run failed — using None")
                         exhaustive[slug] = None
@@ -293,6 +335,16 @@ async def main():
             exhaustive = {s: None for s in PROJECTS}
 
         # ── Step 3: Weight configuration experiments ──────────────────────────
+        if args.exhaustive_only:
+            print("\nExhaustive-only mode — skipping weight configuration experiments.")
+            print(f"\nExhaustive scores obtained:")
+            for slug, score in exhaustive.items():
+                print(f"  {slug:<25} {(score or 0)*100:.1f}%")
+            fname = f"exhaustive_baselines_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(fname, "w") as f:
+                json.dump({"run_at": datetime.now().isoformat(), "exhaustive": exhaustive}, f, indent=2)
+            print(f"\nBaselines saved: {fname}")
+            return
         print(f"\n{'─'*70}")
         print("PHASE 2 — Weight Configuration Experiments")
         print(f"{'─'*70}")
@@ -307,13 +359,13 @@ async def main():
                 try:
                     sid = await create_session(client, base, token,
                         f"wv-{slug}-{list(CONFIGS.keys()).index(cfg_name)+1}-{datetime.now().strftime('%H%M%S')}",
-                        foss_ids[slug], weight_config=weights)
+                        foss_ids[slug], slug, weight_config=weights)
                     final = await poll(client, base, token, sid)
 
                     if final and final.get("status") == "completed":
                         score, executed, total = await get_score(client, base, token, sid)
                         results[cfg_name][slug] = score
-                        print(f"    {slug}: {score:.1f}% ({executed}/{total} mutants)")
+                        print(f"    {slug}: {(score or 0)*100:.1f}% ({executed}/{total} mutants)")
                     else:
                         print(f"    {slug}: ⚠ Failed")
                         results[cfg_name][slug] = None
@@ -339,6 +391,7 @@ async def main():
         scores = [results[cfg_name].get(s) for s in PROJECTS]
         valid_scores = [s for s in scores if s is not None]
         mean = sum(valid_scores)/len(valid_scores) if valid_scores else 0
+        mean_pct = mean * 100
 
         # Correlation with exhaustive
         paired = [(results[cfg_name].get(s), exhaustive.get(s))
@@ -355,17 +408,18 @@ async def main():
         r_str   = f"{r:.4f}"   if not math.isnan(r)   else "N/A"
         rho_str = f"{rho:.4f}" if not math.isnan(rho) else "N/A"
 
-        print(f"  {cfg_name:<38} "
-              f"{scores[0] if scores[0] is not None else '—':>8} "
-              f"{scores[1] if scores[1] is not None else '—':>8} "
-              f"{scores[2] if scores[2] is not None else '—':>8} "
-              f"{mean:>8.2f} {r_str:>10} {rho_str:>11}")
+        s0 = f"{(scores[0] or 0)*100:.1f}%" if scores[0] is not None else "—"
+        s1 = f"{(scores[1] or 0)*100:.1f}%" if scores[1] is not None else "—"
+        s2 = f"{(scores[2] or 0)*100:.1f}%" if scores[2] is not None else "—"
+
+        print(f"  {cfg_name:<38} {s0:>8} {s1:>8} {s2:>8} {mean_pct:>7.1f}% {r_str:>10} {rho_str:>11}")
 
         stat_results.append({
             "config": cfg_name,
             "weights": CONFIGS[cfg_name],
-            "scores": {s: results[cfg_name].get(s) for s in PROJECTS},
-            "mean_score": round(mean, 4),
+            "scores_pct": {s: round((results[cfg_name].get(s) or 0)*100, 2) for s in PROJECTS},
+            "exhaustive_pct": {s: round((exhaustive.get(s) or 0)*100, 2) for s in PROJECTS},
+            "mean_score_pct": round(mean_pct, 2),
             "pearson_r": round(r, 4) if not math.isnan(r) else None,
             "spearman_rho": round(rho, 4) if not math.isnan(rho) else None,
         })
@@ -385,21 +439,21 @@ async def main():
             print("  → Proposed weights are robust — alternatives are statistically equivalent")
 
     # Best config by mean score and correlation
-    best_by_score = max(stat_results, key=lambda x: x["mean_score"])
+    best_by_score = max(stat_results, key=lambda x: x["mean_score_pct"])
     best_by_r     = max((r for r in stat_results if r["pearson_r"] is not None),
                         key=lambda x: x["pearson_r"], default=None)
 
     print(f"\n{'─'*70}")
-    print(f"  Best by mutation score:      {best_by_score['config']} ({best_by_score['mean_score']:.2f}%)")
+    print(f"  Best by mutation score:  {best_by_score['config']} ({best_by_score['mean_score_pct']:.1f}%)")
     if best_by_r:
-        print(f"  Best by Pearson r:           {best_by_r['config']} (r={best_by_r['pearson_r']:.4f})")
+        print(f"  Best by Pearson r:       {best_by_r['config']} (r={best_by_r['pearson_r']:.4f})")
 
     proposed = next(r for r in stat_results if r["config"].startswith("Proposed"))
     print(f"\n  Proposed weights ranking:")
-    sorted_by_score = sorted(stat_results, key=lambda x: x["mean_score"], reverse=True)
-    for i, r in enumerate(sorted_by_score, 1):
+    sorted_by_r = sorted(stat_results, key=lambda x: x.get("pearson_r") or -99, reverse=True)
+    for i, r in enumerate(sorted_by_r, 1):
         marker = " ← PROPOSED" if r["config"].startswith("Proposed") else ""
-        print(f"    {i}. {r['config']:<40} mean={r['mean_score']:.2f}%{marker}")
+        print(f"    {i}. {r['config']:<45} r={r['pearson_r'] or 'N/A'}{marker}")
 
     # ── Save JSON report ──────────────────────────────────────────────────────
     report = {
