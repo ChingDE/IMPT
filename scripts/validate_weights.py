@@ -75,8 +75,18 @@ CONFIGS = {
 PROJECTS = ["ms", "uuid", "dayjs"]
 JS_OPERATORS = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
 BUDGET_MINUTES = 10
-MAX_WAIT = 1200  # 20 min max wait per session
+MAX_WAIT           = 900   # 15 min max wait per IMPT session
+MAX_WAIT_EXHAUSTIVE = 7200  # 2 hours max for exhaustive
 POLL_INTERVAL = 15
+
+# ── Token refresh ─────────────────────────────────────────────────────────────
+async def refresh_token(client, base, email, password):
+    """Get a fresh token — called before each batch to avoid expiry."""
+    r = await client.post(f"{base}/api/auth/token",
+        data={"username": email, "password": password},
+        headers={"Content-Type": "application/x-www-form-urlencoded"})
+    r.raise_for_status()
+    return r.json()["access_token"]
 
 # ── API helpers ───────────────────────────────────────────────────────────────
 def hdr(token):
@@ -100,24 +110,27 @@ async def create_session(client, base, token, name, foss_id, weight_config=None,
     sid = r.json()["id"]
 
     # Configure operators
-    await client.post(f"{base}/api/sessions/{sid}/operators", headers=hdr(token),
+    r2 = await client.post(f"{base}/api/sessions/{sid}/operators", headers=hdr(token),
         json={"selected_operators": JS_OPERATORS})
+    r2.raise_for_status()
 
-    # Set budget
-    await client.post(f"{base}/api/sessions/{sid}/budget", headers=hdr(token), json={
-        "time_budget_minutes":  86400 // 60 if exhaustive else BUDGET_MINUTES,
-        "selected_strategy":    "exhaustive" if exhaustive else "impt",
+    # Set budget — exhaustive uses impt strategy with run_exhaustive=True and large budget
+    r3 = await client.post(f"{base}/api/sessions/{sid}/budget", headers=hdr(token), json={
+        "time_budget_minutes":  120 if exhaustive else BUDGET_MINUTES,
+        "selected_strategy":    "impt",
         "run_exhaustive":       exhaustive,
         "run_comparison":       False,
         "run_operator_based":   False,
     })
+    r3.raise_for_status()
 
     # Start
-    await client.post(f"{base}/api/sessions/{sid}/start", headers=hdr(token))
+    r4 = await client.post(f"{base}/api/sessions/{sid}/start", headers=hdr(token))
+    r4.raise_for_status()
     return sid
 
-async def poll(client, base, token, sid):
-    deadline = time.time() + MAX_WAIT
+async def poll(client, base, token, sid, max_wait=MAX_WAIT):
+    deadline = time.time() + max_wait
     while time.time() < deadline:
         await asyncio.sleep(POLL_INTERVAL)
         r = await client.get(f"{base}/api/sessions/{sid}", headers=hdr(token))
@@ -130,37 +143,26 @@ async def poll(client, base, token, sid):
         print(f"      … {status} ({int(deadline-time.time())}s left)")
     return None
 
+async def get_jobs(client, base, token, sid):
+    """Return all jobs for a session."""
+    r = await client.get(f"{base}/api/analytics/compare/{sid}", headers=hdr(token))
+    if r.status_code == 200:
+        return list(r.json().values())
+    return []
+
 async def get_score(client, base, token, sid):
-    """Return (mutation_score_pct, executed_mutants, total_mutants) from session."""
-    r = await client.get(f"{base}/api/sessions/{sid}", headers=hdr(token))
-    if r.status_code != 200:
-        return None, None, None
-    data = r.json()
-    jobs = data.get("jobs", [])
-    if not jobs:
-        # Try analytics
-        r2 = await client.get(f"{base}/api/analytics/compare/{sid}", headers=hdr(token))
-        if r2.status_code == 200:
-            jobs = list(r2.json().values())
+    """Return (impt_score, executed, total) from session primary job."""
+    jobs = await get_jobs(client, base, token, sid)
     primary = next((j for j in jobs if j.get("strategy") not in ("exhaustive",)), None)
     if primary:
-        return (
-            primary.get("mutation_score", 0),
-            primary.get("executed_mutants", 0),
-            primary.get("total_mutants", 0),
-        )
+        return primary.get("mutation_score", 0), primary.get("executed_mutants", 0), primary.get("total_mutants", 0)
     return None, None, None
 
 async def get_exhaustive_score(client, base, token, sid):
-    """Return exhaustive mutation score."""
-    r = await client.get(f"{base}/api/analytics/compare/{sid}", headers=hdr(token))
-    if r.status_code != 200:
-        return None
-    data = r.json()
-    ex = next((v for v in data.values() if v.get("strategy") == "exhaustive"), None)
-    if ex:
-        return ex.get("mutation_score", 0)
-    return None
+    """Return exhaustive mutation score from same session."""
+    jobs = await get_jobs(client, base, token, sid)
+    ex = next((j for j in jobs if j.get("strategy") == "exhaustive"), None)
+    return ex.get("mutation_score", 0) if ex else None
 
 # ── Statistics ────────────────────────────────────────────────────────────────
 def pearson_r(xs, ys):
@@ -226,12 +228,14 @@ def friedman_stat(matrix):
 # ── Main experiment ───────────────────────────────────────────────────────────
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--url",   default="https://api.impt.it.com")
-    parser.add_argument("--token", required=True)
+    parser.add_argument("--url",      default="https://api.impt.it.com")
+    parser.add_argument("--token",    default=None, help="Initial bearer token")
+    parser.add_argument("--email",    default="evaluator01@impt.it.com")
+    parser.add_argument("--password", default="MFf0ABpZex")
     parser.add_argument("--skip-exhaustive", action="store_true",
         help="Skip exhaustive runs (use if baselines already exist)")
     args = parser.parse_args()
-    base, token = args.url.rstrip("/"), args.token
+    base = args.url.rstrip("/")
 
     print(f"\n{'='*70}")
     print(f"  IMPT MCDM Weight Validation Experiment")
@@ -244,6 +248,12 @@ async def main():
     exhaustive = {}  # project_slug -> exhaustive_score
 
     async with httpx.AsyncClient(timeout=60) as client:
+
+        # Get initial token
+        token = args.token
+        if not token:
+            token = await refresh_token(client, base, args.email, args.password)
+            print(f"✓ Token acquired")
 
         # ── Step 1: Resolve FOSS IDs ──────────────────────────────────────────
         foss_ids = {}
@@ -259,17 +269,17 @@ async def main():
             print(f"{'─'*70}")
 
             for slug in PROJECTS:
-                print(f"\n  [{slug}] Starting exhaustive run…")
+                # Refresh token before each project (they take up to 20 min each)
+                token = await refresh_token(client, base, args.email, args.password)
+                print(f"\n  [{slug}] Starting exhaustive run… (fresh token acquired)")
                 try:
                     sid = await create_session(client, base, token,
                         f"weight-val-exhaustive-{slug}-{datetime.now().strftime('%H%M%S')}",
                         foss_ids[slug], exhaustive=True)
-                    final = await poll(client, base, token, sid)
+                    print(f"  [{slug}] Session {sid[:8]}… started — polling every {POLL_INTERVAL}s")
+                    final = await poll(client, base, token, sid, max_wait=MAX_WAIT_EXHAUSTIVE)
                     if final and final.get("status") == "completed":
                         score = await get_exhaustive_score(client, base, token, sid)
-                        if score is None:
-                            s, _, _ = await get_score(client, base, token, sid)
-                            score = s
                         exhaustive[slug] = score
                         print(f"  [{slug}] Exhaustive score: {score:.1f}%")
                     else:
@@ -292,6 +302,8 @@ async def main():
             results[cfg_name] = {}
 
             for slug in PROJECTS:
+                # Refresh token before each session
+                token = await refresh_token(client, base, args.email, args.password)
                 try:
                     sid = await create_session(client, base, token,
                         f"wv-{slug}-{list(CONFIGS.keys()).index(cfg_name)+1}-{datetime.now().strftime('%H%M%S')}",
