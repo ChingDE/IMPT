@@ -132,9 +132,8 @@ async def create_session(client, base, token, name, foss_id, slug,
     r2.raise_for_status()
 
     # Java exhaustive needs a longer budget (PIT builds take longer)
-    budget = 180 if (exhaustive and lang == "java") else \
-             120 if exhaustive else \
-             BUDGET_MINUTES
+    # Capped at 120 to match TimeBudgetRequest schema limit
+    budget = 120 if exhaustive else BUDGET_MINUTES
     r3 = await client.post(f"{base}/api/sessions/{sid}/budget", headers=hdr(token), json={
         "time_budget_minutes":  budget,
         "selected_strategy":    "impt",
