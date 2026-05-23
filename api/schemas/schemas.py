@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
@@ -146,6 +146,7 @@ class SessionCreate(BaseModel):
     language: str  # java | javascript
     description: Optional[str] = Field(default=None, max_length=500)
     foss_project_id: Optional[str] = None
+    weight_config: Optional[Dict[str, float]] = None  # MCDM weight override for validation experiments
 
     @field_validator("name")
     @classmethod

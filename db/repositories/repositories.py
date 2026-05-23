@@ -214,13 +214,16 @@ class TestSessionRepository:
         language: str,
         description: Optional[str] = None,
         foss_project_id: Optional[str] = None,
+        weight_config: Optional[dict] = None,
     ) -> TestSession:
+        import json as _json
         s = TestSession(
             owner_id=owner_id,
             name=name,
             language=language,
             description=description,
             foss_project_id=foss_project_id,
+            weight_config=_json.dumps(weight_config) if weight_config else None,
             status="not_started",
         )
         self.db.add(s)

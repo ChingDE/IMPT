@@ -65,6 +65,7 @@ async def create_session(
         language=payload.language,
         description=payload.description,
         foss_project_id=payload.foss_project_id,
+        weight_config=payload.weight_config,
     )
 
     await audit_repo.log(
@@ -505,6 +506,7 @@ async def start_testing(
         "test_count":         session.test_count or 100,
         "selected_operators": operators,
         "use_docker":         True,
+        "factor_weights":     json.loads(session.weight_config) if getattr(session, "weight_config", None) else None,
     }
 
     # Resolve FOSS project slug for path lookup in worker
