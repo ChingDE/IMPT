@@ -175,6 +175,7 @@ class TestSession(Base):
 
     # FOSS project (if user selected a pre-loaded project instead of uploading)
     foss_project_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("foss_projects.id"), nullable=True)
+    weight_config:   Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: MCDM weight override
 
     # Legacy fields kept for backward compat
     run_comparison: Mapped[bool]     = mapped_column(Boolean, default=True)
