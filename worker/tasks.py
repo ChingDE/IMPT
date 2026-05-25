@@ -241,6 +241,8 @@ def _run_engine(job_id: str, config: dict) -> dict:
     from impt.models.project import MutationFramework, Project, ProjectConfig
     from impt.models.mutant import ExecutionStatus
     from impt.algorithms.optimization import SelectionStrategy
+    import time as _time
+    _wall_start = _time.time()
     _session_id = config.get("session_id", "")
     _strategy   = config.get("strategy", "impt")
 
@@ -448,7 +450,7 @@ def _run_engine(job_id: str, config: dict) -> dict:
         "ci_upper":                   result.estimate.upper_bound     if result.estimate else 0.0,
         "time_saved_pct":             result.time_saved_pct,
         "subsumption_reduction_pct":  result.subsumption_reduction_pct,
-        "execution_time_seconds":     result.total_execution_time,
+        "execution_time_seconds":     round(_time.time() - _wall_start, 1),
         "result_json":                {"operator_stats": result.operator_stats,
                                        "summary": result.summary()},
         "mutant_records":             records,
