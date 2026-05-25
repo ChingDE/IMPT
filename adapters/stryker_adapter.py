@@ -162,7 +162,6 @@ class StrykerAdapter:
         _, _, is_esm, src_pattern, excl = self._detect_project()
 
         # If an override config exists, extract its mutate pattern for enumeration
-        # This ensures TypeScript/custom patterns are respected in Phase 1
         override_cfg = self.project_dir / "stryker.impt.config.cjs"
         if not override_cfg.exists():
             override_cfg = self.project_dir / "stryker.impt.config.js"
@@ -183,14 +182,40 @@ class StrykerAdapter:
                 log.debug("Could not read override mutate pattern: %s", e)
 
         enum_config = self._build_enum_config(src_pattern, excl)
-        name = "stryker.config.cjs" if is_esm else "stryker.config.js"
+
+        # Write enum config to /tmp to avoid permission issues in project dir
+        import tempfile as _tmp, os as _os
+        tmp_cfg = _tmp.NamedTemporaryFile(
+            mode='w', suffix='.cjs', delete=False,
+            prefix='stryker_enum_', dir='/tmp'
+        )
+        tmp_cfg.write(enum_config)
+        tmp_cfg.close()
+        name = tmp_cfg.name
+
+        # Clean up any old stryker configs in project dir (ignore permission errors)
         for old in ["stryker.config.js", "stryker.config.cjs", ".strykerrc.json"]:
             p = self.project_dir / old
             if p.exists():
-                p.unlink()
-        (self.project_dir / name).write_text(enum_config)
+                try:
+                    p.unlink()
+                except PermissionError:
+                    pass  # Will be overridden by --configFile flag
         log.info("Phase 1: Enumerating mutants via no-op test runner (~5s)...")
-        self._run_stryker_docker(extra_flags="")
+        # Mount the temp config into the container and pass via --configFile
+        cmd = self._docker_base(network="none", extra_mounts=[(name, "/tmp/stryker_enum.cjs")]) + [
+            "sh", "-c",
+            f"npx stryker run --configFile /tmp/stryker_enum.cjs --fileLogLevel off 2>&1"
+        ]
+        try:
+            subprocess.run(cmd, check=True, timeout=3600, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            out = (e.stdout or "") + (e.stderr or "")
+            log.error("Phase 1 enum failed: %s", out[-500:])
+        finally:
+            import os as _os
+            try: _os.unlink(name)
+            except Exception: pass
         mutants = self._parse_results()
         log.info("Phase 1 complete: %d mutants enumerated", len(mutants))
         return mutants
@@ -424,7 +449,7 @@ class StrykerAdapter:
                 return host_prefix + path[len(container_prefix):]
         return path
 
-    def _docker_base(self, network="none", user=None):
+    def _docker_base(self, network="none", user=None, extra_mounts=None):
         host_path = self._host_project_dir()
         cmd = [
             "docker", "run", "--rm",
@@ -434,11 +459,10 @@ class StrykerAdapter:
         ]
         if user:
             cmd += ["--user", user]
-        cmd += [
-            "-v", host_path + ":/project",
-            "-w", "/project",
-            self.sandbox_image,
-        ]
+        cmd += ["-v", host_path + ":/project"]
+        for host_src, container_dst in (extra_mounts or []):
+            cmd += ["-v", f"{host_src}:{container_dst}"]
+        cmd += ["-w", "/project", self.sandbox_image]
         return cmd
 
     def _ensure_deps(self):
@@ -554,7 +578,7 @@ class StrykerAdapter:
                 return host_prefix + path[len(container_prefix):]
         return path
 
-    def _docker_base(self, network="none", user=None):
+    def _docker_base(self, network="none", user=None, extra_mounts=None):
         host_path = self._host_project_dir()
         cmd = [
             "docker", "run", "--rm",
@@ -564,11 +588,10 @@ class StrykerAdapter:
         ]
         if user:
             cmd += ["--user", user]
-        cmd += [
-            "-v", host_path + ":/project",
-            "-w", "/project",
-            self.sandbox_image,
-        ]
+        cmd += ["-v", host_path + ":/project"]
+        for host_src, container_dst in (extra_mounts or []):
+            cmd += ["-v", f"{host_src}:{container_dst}"]
+        cmd += ["-w", "/project", self.sandbox_image]
         return cmd
 
     def _ensure_deps(self):
