@@ -30,12 +30,12 @@ write_config "ms" "module.exports = {
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
 
-# ── uuid (Jest — test script: jest test/unit/) ────────────────────────────────
+# ── uuid (ESM — uses import syntax, needs experimental-vm-modules) ────────────
 write_config "uuid" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/jest test/unit/ --passWithNoTests' },
+  commandRunner: { command: 'node --experimental-vm-modules node_modules/.bin/jest test/unit/ --passWithNoTests' },
   mutate: ['src/**/*.js', '!src/**/*.test.js', '!src/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp', 'dist'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
