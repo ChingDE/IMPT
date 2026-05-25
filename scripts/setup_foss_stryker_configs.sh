@@ -35,7 +35,7 @@ write_config "uuid" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node --experimental-vm-modules node_modules/.bin/jest test/unit/ --passWithNoTests || true' },
+  commandRunner: { command: 'node --experimental-vm-modules node_modules/.bin/jest test/unit/ --passWithNoTests' },
   mutate: ['src/**/*.js', '!src/**/*.test.js', '!src/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp', 'dist'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -79,7 +79,7 @@ write_config "zod" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/vitest run || true' },
+  commandRunner: { command: 'node_modules/.bin/vitest run --exclude="deno/**"' },
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts', '!src/**/__tests__/**'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -90,7 +90,7 @@ write_config "axios" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/mocha test/unit --recursive --exit --timeout 10000 || true' },
+  commandRunner: { command: 'node_modules/.bin/mocha test/unit --recursive --exit --timeout 10000' },
   mutate: ['lib/**/*.js', '!lib/**/*.test.js', '!lib/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -123,7 +123,7 @@ write_config "ramda" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/mocha --recursive source/test --exit --timeout 10000 || true' },
+  commandRunner: { command: 'node_modules/.bin/mocha --recursive source/test --exit --timeout 10000' },
   mutate: ['source/**/*.js', '!source/test/**', '!source/__tests__/**', '!source/**/*.spec.js'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
