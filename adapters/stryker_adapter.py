@@ -182,40 +182,21 @@ class StrykerAdapter:
                 log.debug("Could not read override mutate pattern: %s", e)
 
         enum_config = self._build_enum_config(src_pattern, excl)
+        name = "stryker.config.cjs" if is_esm else "stryker.config.js"
 
-        # Write enum config to /tmp to avoid permission issues in project dir
-        import tempfile as _tmp, os as _os
-        tmp_cfg = _tmp.NamedTemporaryFile(
-            mode='w', suffix='.cjs', delete=False,
-            prefix='stryker_enum_', dir='/tmp'
-        )
-        tmp_cfg.write(enum_config)
-        tmp_cfg.close()
-        name = tmp_cfg.name
-
-        # Clean up any old stryker configs in project dir (ignore permission errors)
-        for old in ["stryker.config.js", "stryker.config.cjs", ".strykerrc.json"]:
-            p = self.project_dir / old
+        # Remove old configs — use subprocess fallback if permission denied
+        for old_name in ["stryker.config.js", "stryker.config.cjs", ".strykerrc.json"]:
+            p = self.project_dir / old_name
             if p.exists():
                 try:
                     p.unlink()
                 except PermissionError:
-                    pass  # Will be overridden by --configFile flag
+                    import subprocess as _sp
+                    _sp.run(["rm", "-f", str(p)], check=False)
+
+        (self.project_dir / name).write_text(enum_config)
         log.info("Phase 1: Enumerating mutants via no-op test runner (~5s)...")
-        # Mount the temp config into the container and pass via --configFile
-        cmd = self._docker_base(network="none", extra_mounts=[(name, "/tmp/stryker_enum.cjs")]) + [
-            "sh", "-c",
-            f"npx stryker run --configFile /tmp/stryker_enum.cjs --fileLogLevel off 2>&1"
-        ]
-        try:
-            subprocess.run(cmd, check=True, timeout=3600, capture_output=True, text=True)
-        except subprocess.CalledProcessError as e:
-            out = (e.stdout or "") + (e.stderr or "")
-            log.error("Phase 1 enum failed: %s", out[-500:])
-        finally:
-            import os as _os
-            try: _os.unlink(name)
-            except Exception: pass
+        self._run_stryker_docker(extra_flags="")
         mutants = self._parse_results()
         log.info("Phase 1 complete: %d mutants enumerated", len(mutants))
         return mutants
