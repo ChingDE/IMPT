@@ -160,6 +160,28 @@ class StrykerAdapter:
         # writes the full JSON report instantly with all mutants as Survived.
         # No real tests are executed — IMPT scores on static factors only.
         _, _, is_esm, src_pattern, excl = self._detect_project()
+
+        # If an override config exists, extract its mutate pattern for enumeration
+        # This ensures TypeScript/custom patterns are respected in Phase 1
+        override_cfg = self.project_dir / "stryker.impt.config.cjs"
+        if not override_cfg.exists():
+            override_cfg = self.project_dir / "stryker.impt.config.js"
+        if override_cfg.exists():
+            try:
+                cfg_text = override_cfg.read_text()
+                import re as _re
+                m = _re.search(r'mutate\s*:\s*(\[.*?\])', cfg_text, _re.DOTALL)
+                if m:
+                    raw = m.group(1)
+                    patterns = _re.findall(r"'([^']+)'|\"([^\"]+)\"", raw)
+                    flat = [a or b for a, b in patterns]
+                    if flat:
+                        src_pattern = flat[0]
+                        excl = flat[1:]
+                        log.info("Phase 1: Using override mutate pattern: %s", src_pattern)
+            except Exception as e:
+                log.debug("Could not read override mutate pattern: %s", e)
+
         enum_config = self._build_enum_config(src_pattern, excl)
         name = "stryker.config.cjs" if is_esm else "stryker.config.js"
         for old in ["stryker.config.js", "stryker.config.cjs", ".strykerrc.json"]:
@@ -248,21 +270,35 @@ class StrykerAdapter:
             except Exception as e:
                 log.warning("Could not parse package.json: %s", e)
 
-        for candidate in ["source", "src", "lib"]:
-            p = self.project_dir / candidate
-            if p.exists() and p.is_dir() and any(p.rglob("*.js")):
-                src_pattern = candidate + "/**/*.js"
-                break
+        # Detect source pattern — check TypeScript first
+        has_ts = any(self.project_dir.rglob("*.ts")) if self.project_dir.exists() else False
+        is_ts  = has_ts and not any((self.project_dir / d).exists()
+                                     for d in ["lib", "dist"]
+                                     if any((self.project_dir / d).rglob("*.js")))
+
+        if is_ts:
+            for candidate in ["source", "src", "lib"]:
+                p = self.project_dir / candidate
+                if p.exists() and p.is_dir() and any(p.rglob("*.ts")):
+                    src_pattern = candidate + "/**/*.ts"
+                    break
+            else:
+                src_pattern = "**/*.ts"
         else:
-            # No standard src dir — use root JS files but exclude tests/config
-            src_pattern = "*.js"
+            for candidate in ["source", "src", "lib"]:
+                p = self.project_dir / candidate
+                if p.exists() and p.is_dir() and any(p.rglob("*.js")):
+                    src_pattern = candidate + "/**/*.js"
+                    break
+            else:
+                src_pattern = "*.js"
 
         # Always exclude test files, config files and node_modules
-        # These exclusions are appended to whatever pattern was found
         EXCLUDE_PATTERNS = [
-            "!**/*.test.js", "!**/*.spec.js", "!**/*.config.*",
-            "!**/*test*", "!**/*spec*", "!tests.js", "!test.js",
-            "!jest.config.*", "!babel.config.*", "!webpack.config.*",
+            "!**/*.test.js", "!**/*.spec.js", "!**/*.test.ts", "!**/*.spec.ts",
+            "!**/*.config.*", "!**/*test*", "!**/*spec*",
+            "!tests.js", "!test.js", "!jest.config.*",
+            "!babel.config.*", "!webpack.config.*",
         ]
 
         return test_runner, test_command, is_esm, src_pattern, EXCLUDE_PATTERNS
