@@ -128,50 +128,17 @@ class StrykerAdapter:
         return cache_root
 
     def _cached_report(self) -> Optional[Path]:
-        """Look up a cached mutation.json for this project hash."""
-        try:
-            h     = self._project_hash()
-            cache = self._global_cache_dir() / h / "mutation.json"
-            if cache.exists():
-                log.info("Project cache hit (hash=%s)", h[:8])
-                return cache
-        except Exception as e:
-            log.debug("Cache lookup failed: %s", e)
+        """Cache disabled during alpha testing — always re-enumerate fresh."""
         return None
 
     def _save_to_cache(self, report_path: Path,
                         elapsed_seconds: float = 0.0,
                         total_mutants: int = 0) -> None:
-        """Save the mutation report and timing metadata to the global project cache."""
-        try:
-            import shutil, json as _json
-            h          = self._project_hash()
-            cache_dir  = self._global_cache_dir() / h
-            cache_dir.mkdir(exist_ok=True)
-            shutil.copy2(report_path, cache_dir / "mutation.json")
-            # Save per-mutant execution time for calibrating the time estimator
-            if elapsed_seconds > 0 and total_mutants > 0:
-                meta = {
-                    "elapsed_seconds": elapsed_seconds,
-                    "total_mutants":   total_mutants,
-                    "seconds_per_mutant": elapsed_seconds / total_mutants,
-                }
-                (cache_dir / "meta.json").write_text(_json.dumps(meta))
-            log.info("Saved report to project cache (hash=%s, %.1fs/mutant)",
-                     h[:8], elapsed_seconds / max(total_mutants, 1))
-        except Exception as e:
-            log.debug("Cache save failed (non-fatal): %s", e)
+        """Cache disabled during alpha testing — no-op."""
+        return
 
     def _cached_seconds_per_mutant(self) -> float:
-        """Return observed seconds-per-mutant from cache, or 0 if unknown."""
-        try:
-            import json as _json
-            h    = self._project_hash()
-            meta = self._global_cache_dir() / h / "meta.json"
-            if meta.exists():
-                return _json.loads(meta.read_text()).get("seconds_per_mutant", 0.0)
-        except Exception:
-            pass
+        """Cache disabled during alpha testing — always return 0."""
         return 0.0
 
     def enumerate(self) -> List[Mutant]:
@@ -183,11 +150,11 @@ class StrykerAdapter:
         """
         self._ensure_deps()
 
-        # Check session-local report first (reuse if already enumerated)
-        report = self._find_report()
-        if report:
-            log.info("Using existing session report: %s", report)
-            return self._parse_results()
+        # Cache disabled during alpha testing — always re-enumerate fresh
+        # report = self._find_report()
+        # if report:
+        #     log.info("Using existing session report: %s", report)
+        #     return self._parse_results()
 
         # Write a special enumeration config: no-op test runner so Stryker
         # writes the full JSON report instantly with all mutants as Survived.
