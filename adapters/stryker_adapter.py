@@ -270,8 +270,26 @@ class StrykerAdapter:
                     _sp.run(["rm", "-f", str(p)], check=False)
 
         (self.project_dir / name).write_text(enum_config)
-        log.info("Phase 1: Enumerating mutants via no-op test runner (~5s)...")
-        self._run_stryker_docker(extra_flags="")
+        # Phase 1 timeout scales with project size — larger projects need more time
+        # Base: 7200s (2h). Env var IMPT_PHASE1_TIMEOUT_SECONDS overrides.
+        import os as _os
+        try:
+            src_files = [f for f in self.project_dir.rglob("*")
+                         if f.suffix in (".js", ".ts", ".java")
+                         and "node_modules" not in str(f)
+                         and ".stryker-tmp" not in str(f)]
+            sample    = src_files[:100]
+            sampled   = sum(len(f.read_text(errors="ignore").splitlines()) for f in sample)
+            est_loc   = int(sampled * len(src_files) / max(len(sample), 1))
+        except Exception:
+            est_loc   = 5000
+        phase1_timeout = int(_os.environ.get(
+            "IMPT_PHASE1_TIMEOUT_SECONDS",
+            max(3600, min(86400, est_loc // 30))  # 1h–24h, scaled by LOC
+        ))
+        log.info("Phase 1: Enumerating mutants via no-op test runner (timeout=%ds, est. LOC~%d)...",
+                 phase1_timeout, est_loc)
+        self._run_stryker_docker(extra_flags="", timeout=phase1_timeout)
         mutants = self._parse_results()
         log.info("Phase 1 complete: %d mutants enumerated", len(mutants))
         return mutants
@@ -700,13 +718,13 @@ class StrykerAdapter:
                 pass
 
 
-    def _run_stryker_docker(self, extra_flags=""):
+    def _run_stryker_docker(self, extra_flags="", timeout=3600):
         """Run Stryker without network, without root (so ava/jest work)."""
         flags = ("npx stryker run " + extra_flags + " --fileLogLevel off 2>&1").strip()
         log.info("Running Stryker: %s", flags)
         cmd = self._docker_base(network="none") + ["sh", "-c", flags]
         try:
-            result = subprocess.run(cmd, check=True, timeout=3600,
+            result = subprocess.run(cmd, check=True, timeout=timeout,
                                     capture_output=True, text=True)
             log.info("Stryker completed")
         except subprocess.CalledProcessError as e:
