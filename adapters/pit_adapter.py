@@ -220,6 +220,9 @@ class PITAdapter:
         # Note: network=bridge required so Maven can load plugins from local cache
         # FOSS Java libraries don't make network calls in tests so this is safe
         log.info("Phase 2: Running PIT mutation testing (network enabled for Maven)…")
+        pom_to_patch = (self.project_dir / submodule / "pom.xml"
+                        if submodule else self.project_dir / "pom.xml")
+        patched = self._inject_junit5_plugin(pom_to_patch)
         pit_args = [
             "mvn", "org.pitest:pitest-maven:1.15.3:mutationCoverage",
             "-DtimestampedReports=false",
@@ -258,6 +261,9 @@ class PITAdapter:
                 log.warning("PIT exited with error but report found — proceeding")
             else:
                 raise
+        finally:
+            if patched:
+                self._restore_pom(pom_to_patch)
 
     def _run_docker_gradle(self, cfg: dict) -> None:
         """Run PIT via Gradle for projects like RxJava and Mockito."""
@@ -338,6 +344,53 @@ class PITAdapter:
             if tgt_tests:
                 cmd += [f"-DtargetTests={tgt_tests}"]
             subprocess.run(cmd, cwd=self.project_dir, check=True, timeout=3600)
+
+
+    def _inject_junit5_plugin(self, pom_path) -> bool:
+        """Inject pitest-junit5-plugin into pom.xml if project uses JUnit 5."""
+        try:
+            from pathlib import Path as _P
+            p = _P(pom_path) if not hasattr(pom_path, 'read_text') else pom_path
+            if not p.exists():
+                return False
+            pom = p.read_text()
+            if "pitest-junit5-plugin" in pom:
+                return False
+            if not any(kw in pom for kw in
+                       ["junit-jupiter", "junit5", "junit.platform",
+                        "junit-vintage", "org.junit.jupiter"]):
+                return False
+            plugin_xml = """
+  <build><plugins><plugin>
+    <groupId>org.pitest</groupId><artifactId>pitest-maven</artifactId>
+    <version>1.15.3</version>
+    <dependencies><dependency>
+      <groupId>org.pitest</groupId>
+      <artifactId>pitest-junit5-plugin</artifactId>
+      <version>1.2.1</version>
+    </dependency></dependencies>
+  </plugin></plugins></build>"""
+            if "</project>" in pom:
+                p.with_suffix(".xml.bak").write_text(pom)
+                p.write_text(pom.replace("</project>",
+                    plugin_xml + "\n</project>", 1))
+                log.info("Injected pitest-junit5-plugin into %s", p)
+                return True
+        except Exception as e:
+            log.debug("pom.xml patch failed (non-fatal): %s", e)
+        return False
+
+    def _restore_pom(self, pom_path) -> None:
+        """Restore pom.xml backup if patch was applied."""
+        try:
+            from pathlib import Path as _P
+            p = _P(pom_path) if not hasattr(pom_path, 'read_text') else pom_path
+            bak = p.with_suffix(".xml.bak")
+            if bak.exists():
+                p.write_text(bak.read_text())
+                bak.unlink()
+        except Exception as e:
+            log.debug("pom restore failed: %s", e)
 
     def _find_report(self) -> Optional[Path]:
         cfg       = self._get_project_config()
