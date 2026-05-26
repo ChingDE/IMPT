@@ -209,7 +209,6 @@ class PITAdapter:
             "-DdetectInlinedCode=true",
             "-DfeaturesOverride=+FANN,+FINULL",
             "--batch-mode",
-            "-o",  # offline flag: use cache only, don't download new artifacts
         ]
         if submodule:
             pit_args += ["-pl", submodule, "-am"]
