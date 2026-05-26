@@ -499,6 +499,7 @@ async def start_testing(
 
     config = {
         "session_id":         session_id,
+        "user_id":            str(session.owner_id),
         "language":           session.language,
         "upload_path":        session.upload_path,
         "foss_project_id":    getattr(session, "foss_project_id", None),

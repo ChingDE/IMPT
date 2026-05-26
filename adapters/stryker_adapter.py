@@ -53,11 +53,13 @@ class StrykerAdapter:
     def __init__(self, project_dir: Path, use_docker: bool = True,
                  sandbox_image: str = "impt-sandbox:latest",
                  time_budget_seconds: int = 0,
-                 selected_mutants: Optional[List[Mutant]] = None):
+                 selected_mutants: Optional[List[Mutant]] = None,
+                 user_id: Optional[str] = None):
         self.use_docker          = use_docker
         self.sandbox_image       = sandbox_image
         self.time_budget_seconds = time_budget_seconds
         self.selected_mutants    = selected_mutants
+        self.user_id             = user_id
 
         # If the project directory is read-only (e.g. FOSS projects mounted :ro),
         # copy it to a writable working directory so npm install and lock files work.
@@ -127,18 +129,75 @@ class StrykerAdapter:
         cache_root.mkdir(exist_ok=True)
         return cache_root
 
+    def _user_cache_dir(self) -> Optional[Path]:
+        """Per-user cross-session cache directory, keyed by user_id + project hash.
+        Returns None if user_id is not set (FOSS projects use session-local cache).
+        Scoped per user so no cross-user data leakage."""
+        if not self.user_id:
+            return None
+        try:
+            h = self._project_hash()
+            cache_root = self._global_cache_dir() / "user" / self.user_id / h
+            cache_root.mkdir(parents=True, exist_ok=True)
+            return cache_root
+        except Exception as e:
+            log.debug("Could not create user cache dir: %s", e)
+            return None
+
     def _cached_report(self) -> Optional[Path]:
-        """Cache disabled during alpha testing — always re-enumerate fresh."""
+        """Check per-user cross-session cache first, then global cache.
+        Cache is enabled for all projects — per-user scoping prevents leakage."""
+        try:
+            # Per-user cross-session cache (user uploads)
+            user_cache = self._user_cache_dir()
+            if user_cache:
+                cached = user_cache / "mutation.json"
+                if cached.exists():
+                    log.info("Per-user cache hit (user=%s, hash=%s)",
+                             self.user_id[:8], self._project_hash()[:8])
+                    # Copy to project dir so _parse_results() can find it
+                    import shutil
+                    dst = self.project_dir / "reports" / "mutation" / "mutation.json"
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(cached), str(dst))
+                    return dst
+        except Exception as e:
+            log.debug("User cache lookup failed: %s", e)
         return None
 
     def _save_to_cache(self, report_path: Path,
                         elapsed_seconds: float = 0.0,
                         total_mutants: int = 0) -> None:
-        """Cache disabled during alpha testing — no-op."""
-        return
+        """Save Phase 1 report to per-user cross-session cache."""
+        try:
+            import shutil, json as _json
+            user_cache = self._user_cache_dir()
+            if user_cache:
+                shutil.copy2(str(report_path), str(user_cache / "mutation.json"))
+                if elapsed_seconds > 0 and total_mutants > 0:
+                    meta = {
+                        "elapsed_seconds":    elapsed_seconds,
+                        "total_mutants":      total_mutants,
+                        "seconds_per_mutant": elapsed_seconds / total_mutants,
+                    }
+                    (user_cache / "meta.json").write_text(_json.dumps(meta))
+                log.info("Saved Phase 1 to user cache (user=%s, hash=%s)",
+                         self.user_id[:8] if self.user_id else "?",
+                         self._project_hash()[:8])
+        except Exception as e:
+            log.debug("Cache save failed (non-fatal): %s", e)
 
     def _cached_seconds_per_mutant(self) -> float:
-        """Cache disabled during alpha testing — always return 0."""
+        """Return observed seconds-per-mutant from user cache, or 0 if unknown."""
+        try:
+            import json as _json
+            user_cache = self._user_cache_dir()
+            if user_cache:
+                meta = user_cache / "meta.json"
+                if meta.exists():
+                    return _json.loads(meta.read_text()).get("seconds_per_mutant", 0.0)
+        except Exception:
+            pass
         return 0.0
 
     def enumerate(self) -> List[Mutant]:

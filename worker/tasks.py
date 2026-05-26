@@ -497,7 +497,8 @@ def _get_all_mutants(config: dict, job_id: str):
                 loc        = adapter.count_loc()
                 test_count = adapter.count_tests()
             else:
-                adapter    = StrykerAdapter(p, use_docker=True)
+                adapter    = StrykerAdapter(p, use_docker=True,
+                                           user_id=config.get("user_id"))
                 # For exhaustive runs, clear any cached Phase 1 report so we
                 # re-enumerate fresh — prevents stale count from a prior IMPT run
                 if config.get("strategy") == "exhaustive":
@@ -539,7 +540,8 @@ def _run_selected_mutants(selected, upload_path: str, config: dict) -> None:
             pass
         else:
             log.info("Phase 3: Running Stryker on %d selected mutants", len(selected))
-            adapter  = StrykerAdapter(p, use_docker=True, selected_mutants=selected)
+            adapter  = StrykerAdapter(p, use_docker=True, selected_mutants=selected,
+                                         user_id=config.get("user_id"))
             executed = adapter.run()
             # Map results back by file+line+operator
             result_map = {}
