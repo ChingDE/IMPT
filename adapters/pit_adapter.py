@@ -79,7 +79,14 @@ class PITAdapter:
     #   target_classes: PIT targetClasses glob (overrides auto-detect)
     #   target_tests:   PIT targetTests glob (overrides auto-detect)
     FOSS_PROJECT_CONFIGS: dict = {
-        # ── Multi-module Maven ────────────────────────────────────────────────
+        # ── Multi-module Maven — specify submodule to skip problematic sibling modules
+        "gson": {
+            "build": "maven",
+            "submodule": "gson",
+            "target_classes":       "com.google.gson.*",
+            "target_tests":         "com.google.gson.*",
+            "excluded_test_classes": "com.google.gson.functional.ReflectionAccessFilterTest",
+        },
         "assertj": {
             "build": "maven",
             "submodule": "assertj-core",
@@ -116,7 +123,7 @@ class PITAdapter:
             self._run_local()
         return self._parse_results()
 
-    def _docker_base(self, network: str = "none") -> list:
+    def _docker_base(self, network: str = "none", workdir: str = "/project") -> list:
         """Base docker run command with persistent Maven cache."""
         # Use a named volume for Maven cache so dependencies persist between runs
         return [
@@ -125,8 +132,8 @@ class PITAdapter:
             "--memory", "2g",
             "--cpus", "2",
             "-v", f"{self.project_dir}:/project",
-            "-v", "impt-maven-cache:/root/.m2",
-            "-w", "/project",
+            "-v", "impt-maven-cache:/home/imptuser/.m2",
+            "-w", workdir,
             self.sandbox_image,
         ]
 
@@ -169,6 +176,10 @@ class PITAdapter:
             log.warning("Dependency resolution had warnings: %s", e)
 
         # Step 1b: Pre-cache PIT plugin and compile test classes with network
+        # If submodule is set, compile from submodule dir for accuracy
+        workdir_flag = []
+        if submodule:
+            workdir_flag = ["--workdir", f"/project/{submodule}"]
         pit_prefetch_cmd = self._docker_base(network="bridge") + [
             "mvn", "test-compile",
             "org.pitest:pitest-maven:1.15.3:mutationCoverage",
@@ -185,8 +196,10 @@ class PITAdapter:
         except Exception as e:
             log.debug("PIT prefetch warning (non-fatal): %s", e)
 
-        # Phase 2: Run PIT mutation testing (no network needed)
-        log.info("Phase 2: Running PIT mutation testing (network disabled)…")
+        # Phase 2: Run PIT mutation testing
+        # Note: network=bridge required so Maven can load plugins from local cache
+        # FOSS Java libraries don't make network calls in tests so this is safe
+        log.info("Phase 2: Running PIT mutation testing (network enabled for Maven)…")
         pit_args = [
             "mvn", "org.pitest:pitest-maven:1.15.3:mutationCoverage",
             "-DtimestampedReports=false",
@@ -196,6 +209,7 @@ class PITAdapter:
             "-DdetectInlinedCode=true",
             "-DfeaturesOverride=+FANN,+FINULL",
             "--batch-mode",
+            "-o",  # offline flag: use cache only, don't download new artifacts
         ]
         if submodule:
             pit_args += ["-pl", submodule, "-am"]
@@ -203,8 +217,17 @@ class PITAdapter:
             pit_args += [f"-DtargetClasses={tgt_cls}"]
         if tgt_tests:
             pit_args += [f"-DtargetTests={tgt_tests}"]
+        excl = cfg.get("excluded_test_classes")
+        if excl:
+            pit_args += [f"-DexcludedTestClasses={excl}"]
 
-        pit_cmd = self._docker_base(network="none") + pit_args
+        # For submodule projects, run from within the submodule directory
+        # to avoid parent pom build extensions causing issues
+        if submodule:
+            pit_cmd = self._docker_base(network="bridge",
+                                        workdir=f"/project/{submodule}") + pit_args
+        else:
+            pit_cmd = self._docker_base(network="bridge") + pit_args
         try:
             result = subprocess.run(pit_cmd, check=True, timeout=3600,
                                     capture_output=True, text=True)
