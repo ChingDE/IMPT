@@ -147,22 +147,43 @@ class PITAdapter:
         tgt_cls    = cfg.get("target_classes")
         tgt_tests  = cfg.get("target_tests")
 
-        # Phase 1: Download all dependencies (with network)
+        # Phase 1: Download ALL dependencies and plugins (with network)
+        # Uses dependency:go-offline to ensure everything is cached locally
+        # so Phase 2 can run completely offline
         log.info("Phase 1: Resolving Maven dependencies (network enabled)…")
         resolve_args = []
         if submodule:
             resolve_args += ["-pl", submodule, "-am"]
+
+        # Step 1a: Download project dependencies
         resolve_cmd = self._docker_base(network="bridge") + [
-            "mvn", "dependency:resolve",
-            "org.pitest:pitest-maven:1.15.3:mutationCoverage",
-            "-DskipTests", "-DfailWhenNoMutations=false",
+            "mvn", "dependency:go-offline",
+            "-DincludePlugins=true",
             "--batch-mode", "-q",
+            "--fail-at-end",
         ] + resolve_args
         try:
             subprocess.run(resolve_cmd, timeout=600, capture_output=True, text=True)
-            log.info("Maven dependency resolution complete")
-        except subprocess.CalledProcessError as e:
-            log.warning("Dependency resolution had warnings: %s", (e.stderr or "")[-300:])
+            log.info("Maven dependency download complete")
+        except Exception as e:
+            log.warning("Dependency resolution had warnings: %s", e)
+
+        # Step 1b: Pre-cache PIT plugin and compile test classes with network
+        pit_prefetch_cmd = self._docker_base(network="bridge") + [
+            "mvn", "test-compile",
+            "org.pitest:pitest-maven:1.15.3:mutationCoverage",
+            "-DfailWhenNoMutations=false",
+            "-DmutationThreshold=0",
+            "-DoutputFormats=XML",
+            "-DtimestampedReports=false",
+            "--batch-mode", "-q",
+            "--fail-at-end",
+        ] + resolve_args
+        try:
+            subprocess.run(pit_prefetch_cmd, timeout=600, capture_output=True, text=True)
+            log.info("PIT plugin pre-cached successfully")
+        except Exception as e:
+            log.debug("PIT prefetch warning (non-fatal): %s", e)
 
         # Phase 2: Run PIT mutation testing (no network needed)
         log.info("Phase 2: Running PIT mutation testing (network disabled)…")
