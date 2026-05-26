@@ -31,10 +31,13 @@ from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────────────────────────
 ALL_PROJECTS = [
+    # JavaScript (10)
     "ms", "uuid", "dayjs", "validator-js", "zod",
-    "axios", "ramda", "faker-js", "date-fns",
+    "axios", "ramda", "faker-js", "date-fns", "mathjs",
+    # Java (10)
     "gson", "commons-io", "jsoup", "mockito",
     "commons-collections", "joda-time",
+    "assertj", "commons-lang", "commons-math", "rxjava",
 ]
 JAVA_PROJECTS  = {"gson","commons-io","jsoup","mockito","commons-collections",
                   "commons-lang","joda-time","assertj","rxjava","commons-math"}
@@ -51,13 +54,9 @@ STRATEGY_LABELS = {
     "operator_based": "Operator-Based",
 }
 
-# Already collected IMPT scores from weight validation run (Proposed config)
-KNOWN_IMPT_SCORES = {
-    "ms": 75.0, "uuid": 88.0, "dayjs": 72.0, "validator-js": 80.8,
-    "zod": 92.3, "axios": 69.2, "ramda": 73.1, "faker-js": 88.9,
-    "date-fns": 88.9, "gson": 86.4, "commons-io": 81.8, "jsoup": 90.9,
-    "mockito": 86.4, "commons-collections": 86.4, "joda-time": 78.3,
-}
+# KNOWN_IMPT_SCORES: populated after weight validation with real data
+# Previous scores were from synthetic fallback and are invalid
+KNOWN_IMPT_SCORES = {}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def hdr(token):

@@ -73,10 +73,11 @@ CONFIGS = {
 
 # Default 15 projects for full validation (mathjs excluded — 38k mutants not feasible exhaustively)
 ALL_PROJECTS = [
-    # JavaScript (9 — excl. mathjs)
-    "ms", "uuid", "dayjs", "validator-js", "zod", "axios", "ramda", "faker-js", "date-fns",
-    # Java (6)
+    # JavaScript (10)
+    "ms", "uuid", "dayjs", "validator-js", "zod", "axios", "ramda", "faker-js", "date-fns", "mathjs",
+    # Java (10)
     "gson", "commons-io", "jsoup", "mockito", "commons-collections", "joda-time",
+    "assertj", "commons-lang", "commons-math", "rxjava",
 ]
 PROJECTS = ALL_PROJECTS  # overridden by --projects flag at runtime
 JAVA_PROJECTS  = {"gson","commons-io","jsoup","mockito","commons-collections","commons-lang",
