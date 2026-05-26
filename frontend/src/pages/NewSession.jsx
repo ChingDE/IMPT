@@ -492,6 +492,13 @@ export function NewSessionBudget() {
   const correlation = budget >= 30 ? 'High (≥0.95)' : budget >= 15 ? 'Medium (0.85-0.94)' : 'Low (<0.85)';
   const corrColor   = budget >= 30 ? 'var(--green)' : budget >= 15 ? 'var(--amber)' : 'var(--red)';
 
+  // Phase 1 estimate for budget page
+  const loc         = session?.loc || 0;
+  const ph1Sec      = Math.max(10, Math.round(loc / 15000 * 60));
+  const ph1Label    = ph1Sec < 60 ? `<1 min` : ph1Sec < 120 ? '~1 min' : `~${Math.round(ph1Sec/60)} min`;
+  const totalEstMin = budget + Math.round(ph1Sec / 60);
+  const showPh1Warn = loc > 10000;
+
   const STRATEGIES = [
     { value:'impt',           label:'⭐ IMPT Intelligent Prioritization', desc:'Multi-factor scoring, subsumption analysis, knapsack optimization. Recommended.' },
     { value:'operator_based', label:'🔬 Operator-Based Prioritization',   desc:'Selects mutants by historical operator effectiveness. Simple heuristic.' },
@@ -607,13 +614,21 @@ export function NewSessionBudget() {
                   ['Estimated Coverage', `${estCoverage}%`, estCoverage>=70?'var(--green)':'var(--amber)'],
                   ['Predicted Correlation', correlation, corrColor],
                   ['Confidence Level', budget>=30?'High':budget>=15?'Medium':'Low', corrColor],
-                  ['Time Budget', `${budget} minutes`, 'var(--gray-700)'],
+                  ['Phase 1 (Mutant Discovery)', ph1Label, 'var(--amber)'],
+                  ['Phase 3 (Mutation Testing)', `${budget} min`, 'var(--purple-mid)'],
+                  ['Total Estimated Time', `~${totalEstMin} min`, 'var(--gray-900)'],
                 ].map(([l,v,c])=>(
                   <div className="summary-row" key={l}>
                     <span className="lbl">{l}</span>
-                    <span className="val" style={{ color:c }}>{v}</span>
+                    <span className="val" style={{ color:c, fontWeight: l.startsWith('Total') ? 700 : 500 }}>{v}</span>
                   </div>
                 ))}
+                {showPh1Warn && (
+                  <div style={{ fontSize:11.5, color:'var(--amber)', marginTop:8, lineHeight:1.5,
+                    background:'#FFFBEB', borderRadius:6, padding:'6px 8px', border:'1px solid #FDE68A' }}>
+                    ⚠ Large project detected ({loc.toLocaleString()} LOC). Phase 1 adds ~{ph1Label} before your budget starts.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -720,6 +735,12 @@ export function NewSessionReview() {
 
             const fmt = m => m < 1 ? '< 1 min' : m < 60 ? `~${m} min` : `~${(m/60).toFixed(1)} hr`;
 
+            const ph1Secs    = Math.max(10, Math.round(loc / 15000 * 60));
+            const ph1Min     = Math.round(ph1Secs / 60);
+            const ph1Fmt     = ph1Secs < 60 ? '<1 min' : ph1Min < 2 ? '~1 min' : `~${ph1Min} min`;
+            const totalWithPh1 = Math.min(estTotal, budget + (isExhaustive ? rawExhaustive : 0)) + ph1Min;
+            const isLargeProject = loc > 10000;
+
             return (
               <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8,
                 padding:'12px 16px', marginBottom:16, fontSize:13, lineHeight:1.7 }}>
@@ -727,15 +748,26 @@ export function NewSessionReview() {
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 16px' }}>
                   <span style={{ color:'var(--gray-600)' }}>Estimated mutants:</span>
                   <span style={{ fontWeight:600 }}>{estMutants.toLocaleString()}</span>
-                  <span style={{ color:'var(--gray-600)' }}>Strategy run ({strategy.toUpperCase()}):</span>
+                  <span style={{ color:'var(--gray-600)' }}>Phase 1 — Mutant discovery:</span>
+                  <span style={{ fontWeight:600, color:'#D97706' }}>{ph1Fmt}</span>
+                  <span style={{ color:'var(--gray-600)' }}>Phase 3 — {strategy.toUpperCase()} testing:</span>
                   <span style={{ fontWeight:600, color:'var(--purple-mid)' }}>{fmt(cappedPrimary)}</span>
                   {isExhaustive && <>
                     <span style={{ color:'var(--gray-600)' }}>Exhaustive baseline:</span>
                     <span style={{ fontWeight:600, color:'var(--amber)' }}>{fmt(rawExhaustive)}</span>
                   </>}
                   <span style={{ color:'var(--gray-600)', fontWeight:600 }}>Total estimated:</span>
-                  <span style={{ fontWeight:700, color:'var(--green)' }}>{fmt(Math.min(estTotal, budget + (isExhaustive ? rawExhaustive : 0)))}</span>
+                  <span style={{ fontWeight:700, color:'var(--green)' }}>~{totalWithPh1} min</span>
                 </div>
+                {isLargeProject && (
+                  <div style={{ fontSize:11.5, marginTop:8, background:'#FFFBEB',
+                    border:'1px solid #FDE68A', borderRadius:6, padding:'6px 8px',
+                    color:'#92400E', lineHeight:1.5 }}>
+                    ⚠ <strong>First-time analysis notice:</strong> Your project has {loc.toLocaleString()} lines of code.
+                    Phase 1 (mutant discovery) will run before your testing budget starts and takes {ph1Fmt}.
+                    Subsequent sessions on the same project will reuse this analysis automatically.
+                  </div>
+                )}
                 <div style={{ fontSize:11, color:'var(--gray-500)', marginTop:6 }}>
                   Estimates based on {loc?.toLocaleString() || '?'} LOC × {opCount} operators.
                   Actual time may vary depending on test suite speed.
@@ -761,7 +793,13 @@ export function NewSessionReview() {
                 <h3 style={{ marginBottom:8 }}>Ready to start mutation testing?</h3>
                 <p style={{ fontSize:13.5,color:'var(--gray-600)',lineHeight:1.65,marginBottom:16 }}>
                   This will execute mutation testing with your configured settings.{' '}
-                  <br /><strong>Estimated time: {session?.time_budget_minutes} minute(s).</strong>
+                  <br /><strong>Phase 1 (mutant discovery) + {session?.time_budget_minutes} min testing budget.</strong>
+                  {(session?.loc||0) > 10000 && (
+                    <span style={{ display:'block', marginTop:6, fontSize:12.5, color:'#92400E',
+                      background:'#FFFBEB', borderRadius:4, padding:'4px 8px' }}>
+                      ⚠ Large project: Phase 1 may take ~{Math.round(Math.max(10, Math.round((session?.loc||0) / 15000 * 60)) / 60)} min before testing begins.
+                    </span>
+                  )}
                 </p>
                 <div className="flex gap-3 justify-end">
                   <button className="btn btn-secondary" onClick={()=>setShowConfirm(false)} autoFocus>Cancel</button>

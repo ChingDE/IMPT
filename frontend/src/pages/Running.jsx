@@ -166,6 +166,14 @@ export default function Running() {
 
   const phaseIdx = elapsed < 5 ? 0 : pct < 20 ? 1 : pct < 90 ? 2 : 3;
 
+  // Phase 1 time estimate based on LOC
+  const loc          = session?.loc || 0;
+  const phase1EstSec = Math.max(10, Math.round(loc / 15000 * 60));
+  const phase1EstMin = Math.round(phase1EstSec / 60);
+  const phase1Label  = phase1EstSec < 60 ? `~${phase1EstSec}s`
+    : phase1EstMin < 2 ? '~1 min' : `~${phase1EstMin} min`;
+  const isPhase1     = phaseIdx === 0 && totalMutants === 0;
+
   return (
     <AppShell>
       <PageHeader icon="⏳" title="Test in Progress…" />
@@ -218,6 +226,24 @@ export default function Running() {
               </div>
             ))}
           </div>
+
+          {/* Phase 1 warning — shown while generating mutants */}
+          {isPhase1 && loc > 0 && (
+            <div style={{
+              background:'#FFF7ED', border:'1px solid #FED7AA',
+              borderRadius:8, padding:'12px 16px', marginBottom:16,
+              fontSize:13, lineHeight:1.6,
+            }}>
+              <div style={{ fontWeight:700, color:'#C2410C', marginBottom:4 }}>
+                ⏳ Phase 1: Analyzing your codebase ({loc.toLocaleString()} lines)
+              </div>
+              <div style={{ color:'#92400E' }}>
+                IMPT is discovering all possible mutation points. This one-time analysis
+                takes <strong>{phase1Label}</strong> and runs before your {session?.time_budget_minutes}-minute
+                testing budget begins. Future sessions on this project will be faster.
+              </div>
+            </div>
+          )}
 
           <div className="grid-2" style={{ gap:16 }}>
             {/* FR099 — Live statistics */}
