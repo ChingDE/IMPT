@@ -79,7 +79,7 @@ write_config "zod" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/vitest run --exclude="deno/**"' },
+  commandRunner: { command: 'node_modules/.bin/vitest run --exclude=".stryker-tmp/**" --exclude="deno/**"' },
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts', '!src/**/__tests__/**'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -101,7 +101,7 @@ write_config "date-fns" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/vitest run || true' },
+  commandRunner: { command: 'node_modules/.bin/vitest run --exclude=".stryker-tmp/**"' },
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -112,7 +112,7 @@ write_config "faker-js" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/vitest run || true' },
+  commandRunner: { command: 'node_modules/.bin/vitest run --exclude=".stryker-tmp/**"' },
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
