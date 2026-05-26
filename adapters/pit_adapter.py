@@ -88,9 +88,8 @@ class PITAdapter:
         },
         "commons-math": {
             "build": "maven",
-            "submodule": "commons-math-legacy",
-            "target_classes": "org.apache.commons.math4.*",
-            "target_tests":   "org.apache.commons.math4.*",
+            "target_classes": "org.apache.commons.math3.*",
+            "target_tests":   "org.apache.commons.math3.*",
         },
         # ── Gradle projects ───────────────────────────────────────────────────
         "rxjava": {
@@ -168,7 +167,7 @@ class PITAdapter:
         # Phase 2: Run PIT mutation testing (no network needed)
         log.info("Phase 2: Running PIT mutation testing (network disabled)…")
         pit_args = [
-            "mvn", "org.pitest:pitest-maven:mutationCoverage",
+            "mvn", "org.pitest:pitest-maven:1.15.3:mutationCoverage",
             "-DtimestampedReports=false",
             "-DoutputFormats=XML",
             "-DmutationThreshold=0",
@@ -207,7 +206,10 @@ class PITAdapter:
         resolve_cmd = self._docker_base(network="bridge") + [
             "sh", "-c",
             "chmod +x gradlew 2>/dev/null || true && "
-            "./gradlew dependencies --no-daemon -q 2>&1 | tail -5",
+            "./gradlew dependencies --no-daemon -q 2>&1 | tail -5 && "
+            # Also pre-cache the PIT Gradle plugin while network is available
+            "mkdir -p ~/.gradle && "
+            "(./gradlew pitest --no-daemon -q 2>&1 | tail -3 || true)",
         ]
         try:
             subprocess.run(resolve_cmd, timeout=600, capture_output=True, text=True)
