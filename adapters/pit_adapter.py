@@ -149,15 +149,31 @@ class PITAdapter:
             self._run_local()
         return self._parse_results()
 
+    def _host_project_dir(self) -> str:
+        """Translate container path to host path for Docker-in-Docker volume mounts."""
+        import os
+        path = str(self.project_dir)
+        host_foss    = os.environ.get("HOST_FOSS_PATH",    "/home/imptuser/impt/foss")
+        host_tmp     = os.environ.get("HOST_TMP_PATH",     "/home/imptuser/impt/foss-tmp")
+        host_uploads = os.environ.get("HOST_UPLOADS_PATH", "/home/imptuser/impt/uploads")
+        for container_prefix, host_prefix in [
+            ("/app/foss-tmp", host_tmp),
+            ("/app/foss",     host_foss),
+            ("/tmp/impt",     host_uploads),
+        ]:
+            if path.startswith(container_prefix):
+                return host_prefix + path[len(container_prefix):]
+        return path
+
     def _docker_base(self, network: str = "none", workdir: str = "/project") -> list:
         """Base docker run command with persistent Maven cache."""
-        # Use a named volume for Maven cache so dependencies persist between runs
+        host_path = self._host_project_dir()
         return [
             "docker", "run", "--rm",
             "--network", network,
             "--memory", "2g",
             "--cpus", "2",
-            "-v", f"{self.project_dir}:/project",
+            "-v", f"{host_path}:/project",
             "-v", "impt-maven-cache:/home/imptuser/.m2",
             "-w", workdir,
             self.sandbox_image,
