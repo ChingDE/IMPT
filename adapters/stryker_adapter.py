@@ -150,11 +150,27 @@ class StrykerAdapter:
         """
         self._ensure_deps()
 
-        # Cache disabled during alpha testing — always re-enumerate fresh
-        # report = self._find_report()
-        # if report:
-        #     log.info("Using existing session report: %s", report)
-        #     return self._parse_results()
+        # Re-enable Phase 1 cache for large projects (LOC > 30,000) to prevent
+        # enumeration from taking too long. Small/medium projects run fresh every time
+        # so testers get the full experience. Large projects like faker-js (261K LOC)
+        # would take 15+ minutes just for Phase 1 without caching.
+        LOC_CACHE_THRESHOLD = 30_000
+        try:
+            src_files = [f for f in self.project_dir.rglob("*")
+                         if f.suffix in (".js", ".ts", ".java")
+                         and "node_modules" not in str(f)
+                         and ".stryker-tmp" not in str(f)]
+            # Sample up to 100 files for speed
+            sample = src_files[:100]
+            sampled_loc = sum(len(f.read_text(errors='ignore').splitlines()) for f in sample)
+            est_loc = int(sampled_loc * len(src_files) / max(len(sample), 1))
+            if est_loc > LOC_CACHE_THRESHOLD:
+                report = self._find_report()
+                if report:
+                    log.info("Large project (est. LOC~%d) — reusing cached Phase 1 report", est_loc)
+                    return self._parse_results()
+        except Exception as e:
+            log.debug("LOC check failed (non-fatal): %s", e)
 
         # Write a special enumeration config: no-op test runner so Stryker
         # writes the full JSON report instantly with all mutants as Survived.
