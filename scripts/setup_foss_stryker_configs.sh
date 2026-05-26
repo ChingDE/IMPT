@@ -79,7 +79,7 @@ write_config "zod" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/vitest run --exclude=".stryker-tmp/**" --exclude="deno/**"' },
+  commandRunner: { command: 'node_modules/.bin/vitest run --config vitest.stryker.config.mjs' },
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts', '!src/**/__tests__/**'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -101,7 +101,7 @@ write_config "date-fns" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/vitest run --exclude=".stryker-tmp/**"' },
+  commandRunner: { command: 'node_modules/.bin/vitest run --config vitest.stryker.config.mjs' },
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -112,7 +112,7 @@ write_config "faker-js" "module.exports = {
   reporters: ['json'],
   testRunner: 'command',
   coverageAnalysis: 'off',
-  commandRunner: { command: 'node_modules/.bin/vitest run --exclude=".stryker-tmp/**"' },
+  commandRunner: { command: 'node_modules/.bin/vitest run --config vitest.stryker.config.mjs' },
   mutate: ['src/**/*.ts', '!src/**/*.test.ts', '!src/**/*.spec.ts'],
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
@@ -128,6 +128,12 @@ write_config "ramda" "module.exports = {
   ignorePatterns: ['node_modules', 'reports', '.stryker-tmp'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' }
 };"
+
+
+# Copy vitest stryker configs for TypeScript projects
+for slug in zod faker-js date-fns; do
+  cp $FOSS_DIR/$slug/vitest.stryker.config.mjs $TMP_DIR/$slug/vitest.stryker.config.mjs 2>/dev/null || true
+done
 
 echo ""
 echo "Done. Stryker override configs written for all 10 JS projects."
