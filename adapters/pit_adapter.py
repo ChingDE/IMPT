@@ -79,12 +79,43 @@ class PITAdapter:
     #   target_classes: PIT targetClasses glob (overrides auto-detect)
     #   target_tests:   PIT targetTests glob (overrides auto-detect)
     FOSS_PROJECT_CONFIGS: dict = {
+        # ── Single-module Maven ───────────────────────────────────────────────
+        "commons-io": {
+            "build": "maven",
+            "target_classes": "org.apache.commons.io.*",
+            "target_tests":   "org.apache.commons.io.*",
+        },
+        "jsoup": {
+            "build": "maven",
+            "target_classes": "org.jsoup.*",
+            "target_tests":   "org.jsoup.*",
+        },
+        "joda-time": {
+            "build": "maven",
+            "target_classes": "org.joda.time.*",
+            "target_tests":   "org.joda.time.*",
+        },
+        "commons-collections": {
+            "build": "maven",
+            "target_classes": "org.apache.commons.collections4.*",
+            "target_tests":   "org.apache.commons.collections4.*",
+        },
+        "commons-lang": {
+            "build": "maven",
+            "target_classes": "org.apache.commons.lang3.*",
+            "target_tests":   "org.apache.commons.lang3.*",
+        },
+        "commons-math": {
+            "build": "maven",
+            "target_classes": "org.apache.commons.math3.*",
+            "target_tests":   "org.apache.commons.math3.*",
+        },
         # ── Multi-module Maven — specify submodule to skip problematic sibling modules
         "gson": {
             "build": "maven",
             "submodule": "gson",
-            "target_classes":       "com.google.gson.*",
-            "target_tests":         "com.google.gson.*",
+            "target_classes":        "com.google.gson.*",
+            "target_tests":          "com.google.gson.*",
             "excluded_test_classes": "com.google.gson.functional.ReflectionAccessFilterTest",
         },
         "assertj": {
@@ -92,11 +123,6 @@ class PITAdapter:
             "submodule": "assertj-core",
             "target_classes": "org.assertj.core.*",
             "target_tests":   "org.assertj.core.*",
-        },
-        "commons-math": {
-            "build": "maven",
-            "target_classes": "org.apache.commons.math3.*",
-            "target_tests":   "org.apache.commons.math3.*",
         },
         # ── Gradle projects ───────────────────────────────────────────────────
         "rxjava": {
@@ -175,26 +201,20 @@ class PITAdapter:
         except Exception as e:
             log.warning("Dependency resolution had warnings: %s", e)
 
-        # Step 1b: Pre-cache PIT plugin and compile test classes with network
-        # If submodule is set, compile from submodule dir for accuracy
-        workdir_flag = []
-        if submodule:
-            workdir_flag = ["--workdir", f"/project/{submodule}"]
-        pit_prefetch_cmd = self._docker_base(network="bridge") + [
+        # Step 1b: Compile source + test classes with network
+        workdir = f"/project/{submodule}" if submodule else "/project"
+        compile_cmd = self._docker_base(network="bridge", workdir=workdir) + [
             "mvn", "test-compile",
-            "org.pitest:pitest-maven:1.15.3:mutationCoverage",
-            "-DfailWhenNoMutations=false",
-            "-DmutationThreshold=0",
-            "-DoutputFormats=XML",
-            "-DtimestampedReports=false",
-            "--batch-mode", "-q",
-            "--fail-at-end",
-        ] + resolve_args
+            "--batch-mode", "-q", "--fail-at-end",
+        ]
         try:
-            subprocess.run(pit_prefetch_cmd, timeout=600, capture_output=True, text=True)
-            log.info("PIT plugin pre-cached successfully")
+            r = subprocess.run(compile_cmd, timeout=600, capture_output=True, text=True)
+            if r.returncode == 0:
+                log.info("PIT plugin pre-cached successfully")
+            else:
+                log.warning("Compilation warnings: %s", (r.stderr or "")[-300:])
         except Exception as e:
-            log.debug("PIT prefetch warning (non-fatal): %s", e)
+            log.debug("Compile warning (non-fatal): %s", e)
 
         # Phase 2: Run PIT mutation testing
         # Note: network=bridge required so Maven can load plugins from local cache
