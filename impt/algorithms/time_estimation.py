@@ -100,9 +100,14 @@ class ExecutionTimeEstimator:
         return estimated_time
 
     def estimate_population(self, mutants: List[Mutant]) -> None:
-        """Set execution_time on all mutants."""
+        """Set execution_time on all mutants.
+        If execution_time is already set (e.g. by PIT adapter from measured time),
+        use that value instead of the formula estimate."""
         for m in mutants:
-            m.execution_time = self.estimate(m)
+            if getattr(m, "execution_time", 0) > 0:
+                pass  # Keep adapter-measured value
+            else:
+                m.execution_time = self.estimate(m)
 
     def record_actual(self, predicted: float, actual: float) -> None:
         """Feed back actual execution time for historical calibration."""
