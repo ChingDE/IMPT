@@ -136,19 +136,39 @@ class PITAdapter:
             "target_tests":          "org.assertj.core.*",
             "excluded_test_classes": "org.assertj.core.api.junit.jupiter.SoftAssertionsExtension_PER_CLASS_Concurrency_Test",
         },
+        "commons-text": {
+            "build": "maven",
+            "target_classes":   "org.apache.commons.text.*",
+            "target_tests":     "org.apache.commons.text.*",
+            "extra_maven_args": ["-Denforcer.skip=true", "-Drat.skip=true"],
+        },
+        "jackson-databind": {
+            "build": "maven",
+            "target_classes":        "com.fasterxml.jackson.databind.*",
+            "target_tests":          "com.fasterxml.jackson.*",
+            "excluded_test_classes": ",".join([
+                "com.fasterxml.jackson.databind.deser.creators.ArrayDelegatorCreatorForCollectionTest",
+                "com.fasterxml.jackson.databind.deser.lazy.LazyIgnoralForNumbers3730Test",
+                "com.fasterxml.jackson.databind.format.MapEntryFormatTest",
+                "com.fasterxml.jackson.databind.introspect.NoClassDefFoundWorkaroundTest",
+                "com.fasterxml.jackson.databind.mixins.MixinForCreators2795Test",
+                "com.fasterxml.jackson.databind.type.TestTypeFactoryWithClassLoader",
+                "com.fasterxml.jackson.databind.util.ClassUtilTest",
+            ]),
+        },
+        "joda-money": {
+            "build": "maven",
+            "target_classes":        "org.joda.money.*",
+            "target_tests":          "org.joda.money.*",
+            "excluded_test_classes": "org.joda.money.TestBigMoney,org.joda.money.TestCurrencyUnit,org.joda.money.TestMoney",
+        },
         # ── Gradle projects ───────────────────────────────────────────────────
         "rxjava": {
             "build": "gradle",
             "target_classes": "io.reactivex.rxjava3.*",
             "target_tests":   "io.reactivex.rxjava3.*",
         },
-        "mockito": {
-            "build": "gradle",
-            "target_classes": "org.mockito.*",
-            "target_tests":   "org.mockito.*",
-            "junit5_plugin_version": "1.2.1",
-            "excluded_test_classes": "org.mockito.AnnotationsAreCopiedFromMockedTypeTest,org.mockito.DescriptionTest,org.mockito.InvocationFactoryTest,org.mockito.MockitoClearTest,org.mockito.MockitoTest",
-        },
+
     }
 
     def _get_project_config(self) -> dict:
