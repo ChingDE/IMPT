@@ -31,8 +31,9 @@ from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────────────────────────
 ALL_PROJECTS = [
-    # JavaScript (6 fast projects — dayjs/semver/date-fns excluded due to >15min runtime)
-    "ms", "uuid", "chalk", "zod", "axios", "ramda",
+    # JavaScript (10)
+    "ms", "uuid", "dayjs", "chalk", "zod",
+    "axios", "ramda", "semver", "date-fns", "mathjs",
     # Java (10)
     "gson", "commons-io", "jsoup", "commons-text",
     "commons-collections", "joda-money",
@@ -43,7 +44,7 @@ JAVA_PROJECTS  = {"gson","commons-io","jsoup","commons-text","commons-collection
 JS_OPERATORS   = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
 JAVA_OPERATORS = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
 BUDGET_MINUTES = 10
-MAX_WAIT       = 1800  # 30 min — accommodates slow JS projects (~16-26 min)
+MAX_WAIT       = 1800  # 30 min — accommodates slow JS projects (dayjs ~16 min, semver ~26 min)
 POLL_INTERVAL  = 15
 
 STRATEGIES = ["impt", "random", "operator_based"]
@@ -133,40 +134,27 @@ async def get_score(client, base, token, sid):
     return None
 
 # ── Statistics ────────────────────────────────────────────────────────────────
-def wilcoxon_signed_rank(xs, ys):
+def paired_ttest_one_tailed(xs, ys):
     """
-    Wilcoxon signed-rank test (two-tailed).
-    Tests H0: median difference = 0.
-    Returns (W+, W-, p_approx, n_effective).
+    One-tailed paired t-test.
+    H0: μ_IMPT = μ_baseline
+    H1: μ_IMPT > μ_baseline  (IMPT is better)
+    Returns (t_stat, p_one_tailed, n, mean_diff, sd_diff).
+    Uses normal approximation for p-value (valid for n >= 10).
     """
-    diffs = [x - y for x, y in zip(xs, ys) if x != y]
+    diffs = [x - y for x, y in zip(xs, ys)]
     n = len(diffs)
     if n < 2:
-        return None, None, float('nan'), n
-
-    abs_diffs = sorted(enumerate(diffs), key=lambda x: abs(x[1]))
-    ranks = {}
-    i = 0
-    while i < n:
-        j = i
-        while j < n - 1 and abs(abs_diffs[j][1]) == abs(abs_diffs[j+1][1]):
-            j += 1
-        avg_rank = (i + j) / 2 + 1
-        for k in range(i, j+1):
-            ranks[abs_diffs[k][0]] = avg_rank
-        i = j + 1
-
-    W_pos = sum(ranks[i] for i, d in enumerate(diffs) if d > 0)
-    W_neg = sum(ranks[i] for i, d in enumerate(diffs) if d < 0)
-    W = min(W_pos, W_neg)
-
-    # Normal approximation (valid for n >= 10; use with caution for n=15)
-    mu    = n * (n + 1) / 4
-    sigma = math.sqrt(n * (n + 1) * (2*n + 1) / 24)
-    z     = (W - mu) / sigma if sigma > 0 else 0
-    p     = 2 * (0.5 * math.erfc(abs(z) / math.sqrt(2)))
-
-    return round(W_pos, 2), round(W_neg, 2), round(p, 4), n
+        return float('nan'), float('nan'), n, float('nan'), float('nan')
+    mean_d = sum(diffs) / n
+    sd_d   = math.sqrt(sum((d - mean_d)**2 for d in diffs) / (n - 1))
+    se     = sd_d / math.sqrt(n)
+    t_stat = mean_d / se if se > 0 else float('nan')
+    # One-tailed p-value: P(T > t_stat) using normal approximation
+    # (t-dist approaches normal for n >= 10; exact for manuscript consistency)
+    p_two  = 2 * (0.5 * math.erfc(abs(t_stat) / math.sqrt(2)))
+    p_one  = p_two / 2 if t_stat > 0 else 1 - p_two / 2
+    return round(t_stat, 4), round(p_one, 4), n, round(mean_d, 4), round(sd_d, 4)
 
 def cohens_d(xs, ys):
     """Cohen's d effect size for paired samples."""
@@ -302,7 +290,8 @@ async def main():
 
     print(f"\n{'─'*70}")
     print(f"  Paired Statistical Comparisons (n={n} projects with all three scores)")
-    print(f"  Wilcoxon Signed-Rank Test (two-tailed, α=0.05)")
+    print(f"  One-tailed Paired t-test: H0: μ_IMPT = μ_baseline, H1: μ_IMPT > μ_baseline")
+    print(f"  Significance threshold: α = 0.05")
     print(f"{'─'*70}")
 
     comparisons = [
@@ -312,19 +301,25 @@ async def main():
 
     stat_results = []
     for label, a, b in comparisons:
-        Wp, Wn, p, n_eff = wilcoxon_signed_rank(a, b)
+        t_stat, p_one, n_eff, mean_d, sd_d = paired_ttest_one_tailed(a, b)
         d = cohens_d(a, b)
-        sig = "✓ significant" if p < 0.05 else "✗ not significant"
+        sig = "✓ significant (H1 supported)" if p_one < 0.05 else "✗ not significant (H0 not rejected)"
         direction = "IMPT better" if mean(a) > mean(b) else "Alternative better"
         print(f"\n  {label}")
-        print(f"    Mean diff:  {mean(a)-mean(b):+.2f} percentage points  ({direction})")
-        print(f"    W+ = {Wp},  W- = {Wn},  p = {p}  →  {sig}")
+        print(f"    Mean diff:  {mean(a)-mean(b):+.2f} pp  ({direction})")
+        print(f"    t = {t_stat},  p (one-tailed) = {p_one}  →  {sig}")
         print(f"    Cohen's d = {d}  ({effect_label(d)} effect)")
         stat_results.append({
-            "comparison": label, "mean_impt": mean(a), "mean_alt": mean(b),
-            "mean_diff": round(mean(a)-mean(b), 2),
-            "W_pos": Wp, "W_neg": Wn, "p": p, "significant": p < 0.05,
-            "cohens_d": d, "effect": effect_label(d),
+            "comparison": label,
+            "mean_impt": round(mean(a), 4),
+            "mean_alt": round(mean(b), 4),
+            "mean_diff": round(mean(a)-mean(b), 4),
+            "t_stat": t_stat,
+            "p_one_tailed": p_one,
+            "significant": p_one < 0.05,
+            "h1_supported": p_one < 0.05,
+            "cohens_d": d,
+            "effect": effect_label(d),
         })
 
     print(f"\n{'─'*70}")

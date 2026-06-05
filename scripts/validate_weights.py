@@ -72,14 +72,17 @@ CONFIGS = {
     },
 }
 
-# Default 15 projects for full validation
-# (mathjs excluded from exhaustive — 38k mutants not feasible exhaustively)
+# All 20 FOSS benchmark projects
+# Note: mathjs excluded from exhaustive baseline (38k mutants, infeasible within 120-min budget)
+# Use --skip-exhaustive to run weight configs on all 20 projects
 ALL_PROJECTS = [
-    # JavaScript (5 fast projects)
-    "ms", "uuid", "chalk", "zod", "axios", "ramda",
+    # JavaScript (10)
+    "ms", "uuid", "dayjs", "chalk", "zod",
+    "axios", "ramda", "semver", "date-fns", "mathjs",
     # Java (10)
-    "gson", "commons-io", "jsoup", "commons-text", "commons-collections",
-    "joda-money", "jackson-databind", "commons-lang", "commons-math", "rxjava",
+    "gson", "commons-io", "jsoup", "commons-text",
+    "commons-collections", "joda-money",
+    "jackson-databind", "commons-lang", "commons-math", "rxjava",
 ]
 PROJECTS = ALL_PROJECTS  # overridden by --projects flag at runtime
 JAVA_PROJECTS  = {"gson","commons-io","jsoup","commons-text","commons-collections",
@@ -179,11 +182,38 @@ async def get_score(client, base, token, sid):
         return primary.get("mutation_score", 0), primary.get("executed_mutants", 0), primary.get("total_mutants", 0)
     return None, None, None
 
-async def get_exhaustive_score(client, base, token, sid):
-    """Return exhaustive mutation score from same session."""
-    jobs = await get_jobs(client, base, token, sid)
-    ex = next((j for j in jobs if j.get("strategy") == "exhaustive"), None)
-    return ex.get("mutation_score", 0) if ex else None
+async def get_mutant_records(client, base, token, sid):
+    """Return list of {priority_score, killed} for each executed mutant."""
+    r = await client.get(f"{base}/api/sessions/{sid}/results", headers=hdr(token))
+    if r.status_code == 200:
+        data = r.json()
+        records = data.get("mutant_records", [])
+        return [
+            {
+                "priority_score": rec.get("priority_score", 0),
+                "killed": 1 if rec.get("status", "").upper() == "KILLED" else 0,
+            }
+            for rec in records
+            if rec.get("priority_score") is not None
+               and rec.get("status", "").upper() in ("KILLED", "SURVIVED")
+        ]
+    return []
+
+def ttest_correlation(r_val, n):
+    """
+    One-tailed t-test for correlation coefficient.
+    H0: r = 0, H1: r > 0
+    t = r * sqrt(n-2) / sqrt(1 - r^2), df = n-2
+    Returns (t_stat, p_one_tailed).
+    """
+    if math.isnan(r_val) or n < 3:
+        return float('nan'), float('nan')
+    t_stat = r_val * math.sqrt(n - 2) / math.sqrt(max(1 - r_val**2, 1e-10))
+    # One-tailed p-value using normal approximation
+    p_one = 0.5 * math.erfc(t_stat / math.sqrt(2))
+    return round(t_stat, 4), round(p_one, 4)
+
+
 
 # ── Statistics ────────────────────────────────────────────────────────────────
 def pearson_r(xs, ys):
@@ -222,11 +252,11 @@ def friedman_stat(matrix):
     if n < 2 or k < 2:
         return float('nan'), float('nan')
 
-    # Rank within each project (row)
+    # Rank within each project (row) — ascending: rank 1 = lowest score
     project_ranks = []
     for proj_i in range(n):
         scores = [(matrix[cfg][proj_i], cfg) for cfg in configs]
-        sorted_scores = sorted(scores, key=lambda x: x[0], reverse=True)
+        sorted_scores = sorted(scores, key=lambda x: x[0], reverse=False)
         ranks = {cfg: rank+1 for rank, (_, cfg) in enumerate(sorted_scores)}
         project_ranks.append(ranks)
 
@@ -351,6 +381,8 @@ async def main():
         print("PHASE 2 — Weight Configuration Experiments")
         print(f"{'─'*70}")
 
+        mutant_records_proposed = []  # per-mutant {priority_score, killed} for Pearson/Spearman
+
         for cfg_name, weights in CONFIGS.items():
             print(f"\n  [{cfg_name}]")
             results[cfg_name] = {}
@@ -368,6 +400,11 @@ async def main():
                         score, executed, total = await get_score(client, base, token, sid)
                         results[cfg_name][slug] = score
                         print(f"    {slug}: {(score or 0)*100:.1f}% ({executed}/{total} mutants)")
+                        # Collect per-mutant records for Proposed config correlation
+                        if cfg_name.startswith("Proposed"):
+                            recs = await get_mutant_records(client, base, token, sid)
+                            if recs:
+                                mutant_records_proposed.extend(recs)
                     else:
                         print(f"    {slug}: ⚠ Failed")
                         results[cfg_name][slug] = None
@@ -380,9 +417,34 @@ async def main():
     print("RESULTS & STATISTICAL ANALYSIS")
     print(f"{'='*70}\n")
 
+    # ── Sec 3.11.4.1-3: Per-mutant Pearson r, Spearman ρ, t-test ─────────────
+    print(f"{'─'*70}")
+    print("Algorithm Accuracy — Priority Score vs Kill Rate Correlation")
+    print("(Proposed weight config: priority score per mutant vs binary kill outcome)")
+    print(f"{'─'*70}")
+    if mutant_records_proposed:
+        pscores = [r["priority_score"] for r in mutant_records_proposed]
+        kills   = [r["killed"]          for r in mutant_records_proposed]
+        n_mut   = len(pscores)
+        r_val   = pearson_r(pscores, kills)
+        rho_val = spearman_rho(pscores, kills)
+        t_r, p_r     = ttest_correlation(r_val,   n_mut)
+        t_rho, p_rho = ttest_correlation(rho_val, n_mut)
+        sig_r   = "✓ significant" if (not math.isnan(p_r))   and p_r   < 0.05 else "✗ not significant"
+        sig_rho = "✓ significant" if (not math.isnan(p_rho)) and p_rho < 0.05 else "✗ not significant"
+        thresh  = "✓ meets threshold" if (not math.isnan(r_val)) and r_val >= 0.85 else "✗ below threshold (≥0.85)"
+        print(f"  n (mutants):    {n_mut}")
+        print(f"  Pearson r:      {r_val:.4f}  t={t_r}, p(one-tailed)={p_r}  →  {sig_r}  [{thresh}]")
+        print(f"  Spearman ρ:     {rho_val:.4f}  t={t_rho}, p(one-tailed)={p_rho}  →  {sig_rho}")
+        kill_rate = sum(kills)/n_mut*100
+        print(f"  Kill rate:      {kill_rate:.1f}%  ({sum(kills)}/{n_mut} mutants killed)")
+    else:
+        print("  ⚠ No per-mutant records available (run without --skip-exhaustive or check API endpoint)")
+        r_val, rho_val, n_mut, t_r, p_r, t_rho, p_rho = [None]*7
+
     # Build score matrix (only projects with exhaustive baseline)
     valid_projects = [s for s in PROJECTS if exhaustive.get(s) is not None]
-    print(f"Projects with exhaustive baseline: {valid_projects or 'none (correlation N/A)'}")
+    print(f"\nProjects with exhaustive baseline: {valid_projects or 'none (correlation N/A)'}")
 
     # Summary table — dynamic columns based on first 3 projects
     col_slugs = PROJECTS[:3]
@@ -470,6 +532,16 @@ async def main():
         "friedman": {
             "chi2": chi2, "df": len(CONFIGS)-1, "p": p,
             "significant": (p < 0.05) if not math.isnan(p) else None,
+        },
+        "per_mutant_correlation": {
+            "n_mutants":    n_mut,
+            "pearson_r":    round(r_val, 4)   if r_val   is not None and not math.isnan(r_val)   else None,
+            "spearman_rho": round(rho_val, 4) if rho_val is not None and not math.isnan(rho_val) else None,
+            "t_pearson":    t_r,
+            "p_pearson":    p_r,
+            "t_spearman":   t_rho,
+            "p_spearman":   p_rho,
+            "meets_threshold_r085": (r_val >= 0.85) if r_val is not None and not math.isnan(r_val) else None,
         },
         "conclusion": {
             "best_by_score": best_by_score["config"],
