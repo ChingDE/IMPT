@@ -3,15 +3,16 @@
 IMPT MCDM Weight Validation Experiment
 =======================================
 Compares 6 weight configurations against exhaustive ground truth
-on 3 FOSS projects (ms, uuid, dayjs) to validate the proposed
-weight distribution for the multi-criteria prioritization algorithm.
+on 15 FOSS projects to validate the proposed weight distribution
+for the multi-criteria prioritization algorithm.
 
 Usage:
   python3 scripts/validate_weights.py \
     --url https://api.impt.it.com \
-    --token YOUR_TOKEN
+    --email evaluator01@impt.it.com \
+    --password MFf0ABpZex
 
-Step 1: Runs exhaustive baselines on ms, uuid, dayjs
+Step 1: Runs exhaustive baselines on selected projects
 Step 2: Runs each weight configuration on same projects
 Step 3: Computes Pearson r, Spearman rho, Friedman test
 Step 4: Saves full results to JSON + prints summary table
@@ -71,17 +72,18 @@ CONFIGS = {
     },
 }
 
-# Default 15 projects for full validation (mathjs excluded — 38k mutants not feasible exhaustively)
+# Default 15 projects for full validation
+# (mathjs excluded from exhaustive — 38k mutants not feasible exhaustively)
 ALL_PROJECTS = [
-    # JavaScript (10)
-    "ms", "uuid", "dayjs", "validator-js", "zod", "axios", "ramda", "faker-js", "date-fns", "mathjs",
+    # JavaScript (5 fast projects)
+    "ms", "uuid", "chalk", "zod", "axios", "ramda",
     # Java (10)
-    "gson", "commons-io", "jsoup", "mockito", "commons-collections", "joda-time",
-    "assertj", "commons-lang", "commons-math", "rxjava",
+    "gson", "commons-io", "jsoup", "commons-text", "commons-collections",
+    "joda-money", "jackson-databind", "commons-lang", "commons-math", "rxjava",
 ]
 PROJECTS = ALL_PROJECTS  # overridden by --projects flag at runtime
-JAVA_PROJECTS  = {"gson","commons-io","jsoup","mockito","commons-collections","commons-lang",
-                  "joda-time","assertj","rxjava","commons-math"}
+JAVA_PROJECTS  = {"gson","commons-io","jsoup","commons-text","commons-collections",
+                  "commons-lang","joda-money","jackson-databind","rxjava","commons-math"}
 JS_OPERATORS   = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
 JAVA_OPERATORS = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
 
@@ -91,7 +93,7 @@ def operators_for(slug):
 def language_for(slug):
     return "java" if slug in JAVA_PROJECTS else "javascript"
 BUDGET_MINUTES = 10
-MAX_WAIT           = 900   # 15 min max wait per IMPT session
+MAX_WAIT           = 1800  # 30 min max wait per IMPT session (slow JS projects need ~16-26 min)
 MAX_WAIT_EXHAUSTIVE = 7200  # 2 hours max for exhaustive
 POLL_INTERVAL = 15
 
@@ -382,8 +384,10 @@ async def main():
     valid_projects = [s for s in PROJECTS if exhaustive.get(s) is not None]
     print(f"Projects with exhaustive baseline: {valid_projects or 'none (correlation N/A)'}")
 
-    # Summary table
-    print(f"\n{'Configuration':<40} {'ms':>8} {'uuid':>8} {'dayjs':>8} {'Mean':>8} {'Pearson r':>10} {'Spearman ρ':>11}")
+    # Summary table — dynamic columns based on first 3 projects
+    col_slugs = PROJECTS[:3]
+    col_header = " ".join(f"{s:>8}" for s in col_slugs)
+    print(f"\n{'Configuration':<40} {col_header} {'Mean':>8} {'Pearson r':>10} {'Spearman ρ':>11}")
     print("─" * 100)
 
     stat_results = []
@@ -408,11 +412,11 @@ async def main():
         r_str   = f"{r:.4f}"   if not math.isnan(r)   else "N/A"
         rho_str = f"{rho:.4f}" if not math.isnan(rho) else "N/A"
 
-        s0 = f"{(scores[0] or 0)*100:.1f}%" if scores[0] is not None else "—"
-        s1 = f"{(scores[1] or 0)*100:.1f}%" if scores[1] is not None else "—"
-        s2 = f"{(scores[2] or 0)*100:.1f}%" if scores[2] is not None else "—"
-
-        print(f"  {cfg_name:<38} {s0:>8} {s1:>8} {s2:>8} {mean_pct:>7.1f}% {r_str:>10} {rho_str:>11}")
+        col_scores = " ".join(
+            f"{(results[cfg_name].get(s) or 0)*100:>7.1f}%" if results[cfg_name].get(s) is not None else f"{'—':>8}"
+            for s in col_slugs
+        )
+        print(f"  {cfg_name:<38} {col_scores} {mean_pct:>7.1f}% {r_str:>10} {rho_str:>11}")
 
         stat_results.append({
             "config": cfg_name,
@@ -470,7 +474,7 @@ async def main():
         "conclusion": {
             "best_by_score": best_by_score["config"],
             "best_by_pearson_r": best_by_r["config"] if best_by_r else None,
-            "proposed_score_rank": sorted_by_score.index(proposed) + 1,
+            "proposed_score_rank": sorted([r["mean_score_pct"] for r in stat_results], reverse=True).index(proposed["mean_score_pct"]) + 1,
         }
     }
     fname = f"weight_validation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"

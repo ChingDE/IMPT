@@ -31,9 +31,8 @@ from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────────────────────────
 ALL_PROJECTS = [
-    # JavaScript (10)
-    "ms", "uuid", "dayjs", "chalk", "zod",
-    "axios", "ramda", "semver", "date-fns", "mathjs",
+    # JavaScript (6 fast projects — dayjs/semver/date-fns excluded due to >15min runtime)
+    "ms", "uuid", "chalk", "zod", "axios", "ramda",
     # Java (10)
     "gson", "commons-io", "jsoup", "commons-text",
     "commons-collections", "joda-money",
@@ -44,7 +43,7 @@ JAVA_PROJECTS  = {"gson","commons-io","jsoup","commons-text","commons-collection
 JS_OPERATORS   = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
 JAVA_OPERATORS = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
 BUDGET_MINUTES = 10
-MAX_WAIT       = 900
+MAX_WAIT       = 1800  # 30 min — accommodates slow JS projects (~16-26 min)
 POLL_INTERVAL  = 15
 
 STRATEGIES = ["impt", "random", "operator_based"]
