@@ -546,10 +546,27 @@ class PITAdapter:
                 return p
         return None
 
+    def _repair_xml(self, report) -> None:
+        """Auto-repair truncated mutations.xml by closing any open tags."""
+        try:
+            import xml.etree.ElementTree as _ET
+            _ET.parse(report)
+            return
+        except Exception:
+            text = report.read_text(errors="replace")
+            last = text.rfind("</mutation>")
+            if last >= 0:
+                fixed = text[:last + len("</mutation>")] + "\n</mutations>"
+                report.write_text(fixed)
+                log.info("Repaired truncated mutations.xml: %s", report)
+            else:
+                log.warning("Could not repair mutations.xml: %s", report)
+
     def _parse_results(self) -> List[Mutant]:
         report = self._find_report()
         if not report:
             raise FileNotFoundError(f"PIT report not found in {self.project_dir}")
+        self._repair_xml(report)
 
         mutants = []
         root    = ET.parse(report).getroot()
