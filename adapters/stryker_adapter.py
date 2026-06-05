@@ -224,12 +224,19 @@ class StrykerAdapter:
             sampled_loc = sum(len(f.read_text(errors='ignore').splitlines()) for f in sample)
             est_loc = int(sampled_loc * len(src_files) / max(len(sample), 1))
             if est_loc > LOC_CACHE_THRESHOLD:
+                # Check Phase 1 backup first, then fallback to main report
                 report = self._find_report()
-                if report and report.stat().st_size > 1024:
-                    log.info("Large project (est. LOC~%d) — reusing cached Phase 1 report", est_loc)
+                backup = report.parent / "mutation.phase1.json" if report else None
+                cache = backup if (backup and backup.exists() and backup.stat().st_size > 1024) else None
+                if not cache and report and report.stat().st_size > 1024:
+                    cache = report
+                if cache:
+                    log.info("Large project (est. LOC~%d) — reusing cached Phase 1 report (%s)", est_loc, cache.name)
+                    import shutil as _sh
+                    _sh.copy2(str(cache), str(report))
                     return self._parse_results()
                 elif report:
-                    log.info("Large project cache exists but empty/small (%d bytes) — re-running Phase 1", report.stat().st_size)
+                    log.info("Large project cache missing or too small — re-running Phase 1")
         except Exception as e:
             log.debug("LOC check failed (non-fatal): %s", e)
 
@@ -294,6 +301,16 @@ class StrykerAdapter:
         self._run_stryker_docker(extra_flags="", timeout=phase1_timeout)
         mutants = self._parse_results()
         log.info("Phase 1 complete: %d mutants enumerated", len(mutants))
+        # Save Phase 1 cache backup so Phase 3 doesn't overwrite it
+        try:
+            report = self._find_report()
+            if report and report.exists():
+                import shutil as _shutil
+                backup = report.parent / "mutation.phase1.json"
+                _shutil.copy2(str(report), str(backup))
+                log.info("Saved Phase 1 cache backup: %s", backup)
+        except Exception as _e:
+            log.debug("Could not save Phase 1 backup: %s", _e)
         return mutants
 
     def _run_filtered(self, selected: List[Mutant]) -> List[Mutant]:
