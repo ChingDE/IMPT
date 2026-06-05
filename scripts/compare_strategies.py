@@ -32,15 +32,15 @@ from datetime import datetime
 # ── Config ────────────────────────────────────────────────────────────────────
 ALL_PROJECTS = [
     # JavaScript (10)
-    "ms", "uuid", "dayjs", "validator-js", "zod",
-    "axios", "ramda", "faker-js", "date-fns", "mathjs",
+    "ms", "uuid", "dayjs", "chalk", "zod",
+    "axios", "ramda", "semver", "date-fns", "mathjs",
     # Java (10)
-    "gson", "commons-io", "jsoup", "mockito",
-    "commons-collections", "joda-time",
-    "assertj", "commons-lang", "commons-math", "rxjava",
+    "gson", "commons-io", "jsoup", "commons-text",
+    "commons-collections", "joda-money",
+    "jackson-databind", "commons-lang", "commons-math", "rxjava",
 ]
-JAVA_PROJECTS  = {"gson","commons-io","jsoup","mockito","commons-collections",
-                  "commons-lang","joda-time","assertj","rxjava","commons-math"}
+JAVA_PROJECTS  = {"gson","commons-io","jsoup","commons-text","commons-collections",
+                  "commons-lang","joda-money","jackson-databind","rxjava","commons-math"}
 JS_OPERATORS   = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
 JAVA_OPERATORS = ["AOR", "ROR", "NEGATE_RETURN", "COR"]
 BUDGET_MINUTES = 10

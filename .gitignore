@@ -12,3 +12,12 @@ frontend/src/node_modules/
 frontend/dist/
 *.egg-info/
 .venv/
+foss-tmp/
+smoke_test_*.json
+weight_validation_*.json
+comparative_analysis_*.json
+exhaustive_baselines_*.json
+IMPT_Chapter4_Data.json
+nohup.out
+FETCH_HEAD
+*.log
