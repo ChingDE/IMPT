@@ -225,9 +225,11 @@ class StrykerAdapter:
             est_loc = int(sampled_loc * len(src_files) / max(len(sample), 1))
             if est_loc > LOC_CACHE_THRESHOLD:
                 report = self._find_report()
-                if report:
+                if report and report.stat().st_size > 1024:
                     log.info("Large project (est. LOC~%d) — reusing cached Phase 1 report", est_loc)
                     return self._parse_results()
+                elif report:
+                    log.info("Large project cache exists but empty/small (%d bytes) — re-running Phase 1", report.stat().st_size)
         except Exception as e:
             log.debug("LOC check failed (non-fatal): %s", e)
 
