@@ -3,7 +3,7 @@
 IMPT MCDM Weight Validation Experiment
 =======================================
 Compares 6 weight configurations against exhaustive ground truth
-on 15 FOSS projects to validate the proposed weight distribution
+on the FOSS projects to validate the proposed weight distribution
 for the multi-criteria prioritization algorithm.
 
 Usage:
@@ -16,6 +16,10 @@ Step 1: Runs exhaustive baselines on selected projects
 Step 2: Runs each weight configuration on same projects
 Step 3: Computes Pearson r, Spearman rho, Friedman test
 Step 4: Saves full results to JSON + prints summary table
+
+During the exhaustive phase (PHASE 1) this build also writes capture_<slug>.json
+per project — full per-mutant {priority_score, execution_time, killed, operator}
+records pulled from the job CSV export — for the offline budget-sweep simulator.
 """
 
 import argparse
@@ -71,6 +75,7 @@ CONFIGS = {
         "bug_history":              0.30,
     },
 }
+PROPOSED_WEIGHTS = CONFIGS["Proposed (30/25/20/15/10)"]
 
 # All 20 FOSS benchmark projects
 # Note: mathjs excluded from exhaustive baseline (38k mutants, infeasible within 120-min budget)
@@ -182,6 +187,19 @@ async def get_score(client, base, token, sid):
         return primary.get("mutation_score", 0), primary.get("executed_mutants", 0), primary.get("total_mutants", 0)
     return None, None, None
 
+async def get_exhaustive_score(client, base, token, sid):
+    """Return exhaustive mutation score (fraction 0-1) for the session, or None.
+
+    The exhaustive run executes the full mutant set; its job is tagged
+    'exhaustive'. Some builds expose only a single primary job, so fall back
+    to the non-baseline job if no explicit 'exhaustive' job is present.
+    """
+    jobs = await get_jobs(client, base, token, sid)
+    ex = next((j for j in jobs if j.get("strategy") == "exhaustive"), None)
+    if ex is None:
+        ex = next((j for j in jobs if j.get("strategy") not in ("random", "operator_based")), None)
+    return ex.get("mutation_score", 0) if ex else None
+
 async def get_mutant_records(client, base, token, sid):
     """Return list of {priority_score, killed} for each executed mutant."""
     r = await client.get(f"{base}/api/sessions/{sid}/results", headers=hdr(token))
@@ -198,6 +216,53 @@ async def get_mutant_records(client, base, token, sid):
                and rec.get("status", "").upper() in ("KILLED", "SURVIVED")
         ]
     return []
+
+def _primary_job_id(jobs):
+    """Pick the exhaustive/primary job and return its id (tries common keys)."""
+    job = next((j for j in jobs if j.get("strategy") == "exhaustive"), None)
+    if job is None:
+        job = next((j for j in jobs if j.get("strategy") not in ("random", "operator_based")), None)
+    if job is None:
+        print(f"    [capture] no primary job found; sample keys: "
+              f"{[list(j.keys()) for j in jobs][:1]}")
+        return None
+    jid = job.get("id") or job.get("job_id") or job.get("uuid") or job.get("jobId")
+    if not jid:
+        print(f"    [capture] no job-id field in job dict; keys: {list(job.keys())}")
+    return jid
+
+async def get_capture_records(client, base, token, sid):
+    """Full per-mutant records for the offline budget-sweep simulator, pulled
+    from the job CSV export (guaranteed to include execution time and operator).
+
+    Returns list of {priority_score, execution_time, killed, operator}.
+    """
+    import csv as _csv, io as _io
+    jobs = await get_jobs(client, base, token, sid)
+    job_id = _primary_job_id(jobs)
+    if not job_id:
+        return []
+    r = await client.get(f"{base}/api/jobs/{job_id}/export/csv", headers=hdr(token))
+    if r.status_code != 200:
+        print(f"    [capture] export/csv -> HTTP {r.status_code}")
+        return []
+    out = []
+    for row in _csv.DictReader(_io.StringIO(r.text)):
+        status = (row.get("Status") or "").upper()
+        if status not in ("KILLED", "SURVIVED"):
+            continue
+        try:
+            et = float(row.get("Execution Time (s)") or 0)
+            ps = float(row.get("Priority Score") or 0)
+        except (TypeError, ValueError):
+            continue
+        out.append({
+            "priority_score": ps,
+            "execution_time": et,
+            "killed": 1 if status == "KILLED" else 0,
+            "operator": row.get("Operator"),
+        })
+    return out
 
 def ttest_correlation(r_val, n):
     """
@@ -230,47 +295,63 @@ def pearson_r(xs, ys):
     return num/(dx*dy)
 
 def spearman_rho(xs, ys):
-    """Spearman rank correlation."""
+    """Spearman rank correlation (average ranks for ties)."""
     def rank(arr):
-        s = sorted(enumerate(arr), key=lambda x: x[1])
-        r = [0]*len(arr)
-        for rank_i, (orig_i, _) in enumerate(s):
-            r[orig_i] = rank_i + 1
-        return r
-    rx, ry = rank(xs), rank(ys)
-    return pearson_r(rx, ry)
+        order = sorted(range(len(arr)), key=lambda i: arr[i])
+        ranks = [0.0]*len(arr)
+        i = 0
+        while i < len(order):
+            j = i
+            while j+1 < len(order) and arr[order[j+1]] == arr[order[i]]:
+                j += 1
+            avg = (i + j) / 2.0 + 1.0
+            for k in range(i, j+1):
+                ranks[order[k]] = avg
+            i = j + 1
+        return ranks
+    return pearson_r(rank(xs), rank(ys))
 
 def friedman_stat(matrix):
     """
-    Friedman test statistic for k configurations × n projects.
+    Friedman test for k configurations x n projects.
     matrix: dict of config_name -> list of scores (one per project).
-    Returns chi-squared statistic and p-value approximation.
+    Uses AVERAGE ranks for ties (prior version assigned distinct sequential
+    ranks to ties, which inflates chi-square when scores tie — and these data
+    tie heavily). Prefers scipy when available; otherwise a correct
+    average-rank implementation with a Wilson-Hilferty p-value.
+    Returns (chi2, p).
     """
     configs = list(matrix.keys())
-    n = len(list(matrix.values())[0])  # number of projects
+    n = len(list(matrix.values())[0])
     k = len(configs)
     if n < 2 or k < 2:
         return float('nan'), float('nan')
 
-    # Rank within each project (row) — ascending: rank 1 = lowest score
-    project_ranks = []
-    for proj_i in range(n):
-        scores = [(matrix[cfg][proj_i], cfg) for cfg in configs]
-        sorted_scores = sorted(scores, key=lambda x: x[0], reverse=False)
-        ranks = {cfg: rank+1 for rank, (_, cfg) in enumerate(sorted_scores)}
-        project_ranks.append(ranks)
+    try:
+        from scipy.stats import friedmanchisquare
+        chi2, p = friedmanchisquare(*[matrix[c] for c in configs])
+        return round(float(chi2), 4), round(float(p), 4)
+    except Exception:
+        pass
 
-    # Friedman statistic
-    rank_sums = {cfg: sum(project_ranks[i][cfg] for i in range(n)) for cfg in configs}
-    chi2 = (12.0 / (n * k * (k+1))) * sum(r**2 for r in rank_sums.values()) - 3*n*(k+1)
-
-    # Approximate p-value using chi-squared distribution (df=k-1)
+    # Pure-Python fallback with average ranks
+    rank_sums = {c: 0.0 for c in configs}
+    for i in range(n):
+        scored = sorted(((matrix[c][i], c) for c in configs), key=lambda x: x[0])
+        j = 0
+        while j < len(scored):
+            jj = j
+            while jj+1 < len(scored) and scored[jj+1][0] == scored[j][0]:
+                jj += 1
+            avg = sum(range(j+1, jj+2)) / (jj - j + 1)
+            for t in range(j, jj+1):
+                rank_sums[scored[t][1]] += avg
+            j = jj + 1
+    chi2 = (12.0 / (n*k*(k+1))) * sum(r*r for r in rank_sums.values()) - 3*n*(k+1)
     df = k - 1
-    # Approximate using Wilson-Hilferty
     try:
         x = chi2 / df
         z = ((x ** (1/3)) - (1 - 2/(9*df))) / math.sqrt(2/(9*df))
-        # Standard normal CDF approximation (upper tail)
         p = 0.5 * math.erfc(z / math.sqrt(2))
     except Exception:
         p = float('nan')
@@ -284,7 +365,7 @@ async def main():
     parser.add_argument("--email",    default="evaluator01@impt.it.com")
     parser.add_argument("--password", default="MFf0ABpZex")
     parser.add_argument("--projects", default=None,
-        help="Comma-separated slugs, e.g. ms,uuid,dayjs  (default: all 15)")
+        help="Comma-separated slugs, e.g. ms,uuid,dayjs  (default: all 20)")
     parser.add_argument("--skip-exhaustive", action="store_true",
         help="Skip exhaustive baseline runs")
     parser.add_argument("--exhaustive-only", action="store_true",
@@ -349,13 +430,26 @@ async def main():
                 try:
                     sid = await create_session(client, base, token,
                         f"weight-val-exhaustive-{slug}-{datetime.now().strftime('%H%M%S')}",
-                        foss_ids[slug], slug, exhaustive=True)
+                        foss_ids[slug], slug,
+                        weight_config=PROPOSED_WEIGHTS, exhaustive=True)
                     print(f"  [{slug}] Session {sid[:8]}… started — polling every {POLL_INTERVAL}s")
                     final = await poll(client, base, token, sid, max_wait=MAX_WAIT_EXHAUSTIVE)
                     if final and final.get("status") == "completed":
                         score = await get_exhaustive_score(client, base, token, sid)
                         exhaustive[slug] = score
                         print(f"  [{slug}] Exhaustive score: {(score or 0)*100:.1f}%")
+                        # Capture full per-mutant records for the budget-sweep simulator
+                        recs = await get_capture_records(client, base, token, sid)
+                        total = (final.get("total_mutants") or len(recs))
+                        with open(f"capture_{slug}.json", "w") as cf:
+                            json.dump({
+                                "project": slug,
+                                "capture_budget_seconds": MAX_WAIT_EXHAUSTIVE,
+                                "completed_all_mutants": len(recs) >= (total or 0),
+                                "n_records": len(recs),
+                                "mutants": recs,
+                            }, cf, indent=2)
+                        print(f"  [{slug}] captured {len(recs)} mutant records → capture_{slug}.json")
                     else:
                         print(f"  [{slug}] ⚠ Exhaustive run failed — using None")
                         exhaustive[slug] = None
@@ -402,9 +496,11 @@ async def main():
                         print(f"    {slug}: {(score or 0)*100:.1f}% ({executed}/{total} mutants)")
                         # Collect per-mutant records for Proposed config correlation
                         if cfg_name.startswith("Proposed"):
-                            recs = await get_mutant_records(client, base, token, sid)
+                            recs = await get_capture_records(client, base, token, sid)
                             if recs:
-                                mutant_records_proposed.extend(recs)
+                                mutant_records_proposed.extend(
+                                    {"priority_score": r["priority_score"], "killed": r["killed"]}
+                                    for r in recs)
                     else:
                         print(f"    {slug}: ⚠ Failed")
                         results[cfg_name][slug] = None
@@ -439,7 +535,7 @@ async def main():
         kill_rate = sum(kills)/n_mut*100
         print(f"  Kill rate:      {kill_rate:.1f}%  ({sum(kills)}/{n_mut} mutants killed)")
     else:
-        print("  ⚠ No per-mutant records available (run without --skip-exhaustive or check API endpoint)")
+        print("  ⚠ No per-mutant records available (check job CSV export endpoint)")
         r_val, rho_val, n_mut, t_r, p_r, t_rho, p_rho = [None]*7
 
     # Build score matrix (only projects with exhaustive baseline)
@@ -490,16 +586,23 @@ async def main():
             "spearman_rho": round(rho, 4) if not math.isnan(rho) else None,
         })
 
-    # Friedman test across configurations
+    # Friedman test across configurations (exclude failed/None cells per project)
     print(f"\n{'─'*70}")
     print("Friedman Test (H₀: all weight configurations produce equivalent scores)")
-    score_matrix = {cfg: [results[cfg].get(s, 0) or 0 for s in PROJECTS] for cfg in CONFIGS}
-    chi2, p = friedman_stat(score_matrix)
-    print(f"  χ² = {chi2},  df = {len(CONFIGS)-1},  p = {p}")
+    usable = [s for s in PROJECTS
+              if all(results[cfg].get(s) is not None for cfg in CONFIGS)]
+    dropped = [s for s in PROJECTS if s not in usable]
+    if dropped:
+        print(f"  (excluded {len(dropped)} project(s) with a failed cell: {dropped})")
+    score_matrix = {cfg: [results[cfg][s] for s in usable] for cfg in CONFIGS}
+    if usable:
+        chi2, p = friedman_stat(score_matrix)
+    else:
+        chi2, p = float('nan'), float('nan')
+    print(f"  n = {len(usable)} projects,  χ² = {chi2},  df = {len(CONFIGS)-1},  p = {p}")
     if not math.isnan(p):
         if p < 0.05:
             print("  → REJECT H₀: Significant differences between configurations (p < 0.05)")
-            print("  → Post-hoc: Proposed configuration comparison with each alternative")
         else:
             print("  → FAIL TO REJECT H₀: No significant differences (p ≥ 0.05)")
             print("  → Proposed weights are robust — alternatives are statistically equivalent")
@@ -515,11 +618,6 @@ async def main():
         print(f"  Best by Pearson r:       {best_by_r['config']} (r={best_by_r['pearson_r']:.4f})")
 
     proposed = next(r for r in stat_results if r["config"].startswith("Proposed"))
-    print(f"\n  Proposed weights ranking:")
-    sorted_by_r = sorted(stat_results, key=lambda x: x.get("pearson_r") or -99, reverse=True)
-    for i, r in enumerate(sorted_by_r, 1):
-        marker = " ← PROPOSED" if r["config"].startswith("Proposed") else ""
-        print(f"    {i}. {r['config']:<45} r={r['pearson_r'] or 'N/A'}{marker}")
 
     # ── Save JSON report ──────────────────────────────────────────────────────
     report = {
@@ -531,6 +629,8 @@ async def main():
         "configurations":  stat_results,
         "friedman": {
             "chi2": chi2, "df": len(CONFIGS)-1, "p": p,
+            "n_projects": len(usable),
+            "excluded_projects": dropped,
             "significant": (p < 0.05) if not math.isnan(p) else None,
         },
         "per_mutant_correlation": {
