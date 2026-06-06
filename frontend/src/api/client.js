@@ -52,6 +52,7 @@ export const uploadProject      = (id,fd)     => client.post(`/api/sessions/${id
 export const configureOperators = (id,ops)    => client.post(`/api/sessions/${id}/operators`, { selected_operators: ops }).then(r => r.data);
 export const setBudget          = (id,p)      => client.post(`/api/sessions/${id}/budget`, p).then(r => r.data);
 export const startTesting       = (id)        => client.post(`/api/sessions/${id}/start`).then(r => r.data);
+export const stopTesting        = (id)        => client.post(`/api/sessions/${id}/stop`).then(r => r.data);
 export const createShareLink    = (id)        => client.post(`/api/sessions/${id}/share`).then(r => r.data);
 export const getSharedSession   = (token)     => client.get(`/api/sessions/share/${token}`).then(r => r.data);
 export const getSessionJobs     = (id)       => client.get(`/api/sessions/${id}/jobs`).then(r => r.data);

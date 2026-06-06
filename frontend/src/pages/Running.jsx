@@ -1,7 +1,7 @@
 // src/pages/Running.jsx  FR097-FR106
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getSession, getSessionJobs } from '../api/client';
+import { getSession, getSessionJobs, stopTesting } from '../api/client';
 import { AppShell, PageHeader, Alert } from '../components/UI';
 
 const STRATEGY_LABEL = { impt: '⭐ IMPT Intelligent', random: 'Random Sampling', operator_based: 'Operator-Based' };
@@ -24,15 +24,46 @@ export default function Running() {
   const [session, setSession]       = useState(null);
   const [jobs, setJobs]             = useState([]);
   const [elapsed, setElapsed]       = useState(0);
+  const [barPct, setBarPct]         = useState(0);  // live Stryker % for JS runs (bar only)
+  const [stopping, setStopping]     = useState(false);
   const [primaryOnlyDone, setPrimaryOnlyDone] = useState(false);
   const [logs, setLogs]         = useState([
     { t: new Date().toLocaleTimeString('en-US',{hour12:false}), msg: 'Initializing mutation testing engine…', type: 'running', key: 0 }
   ]);
   const prevExec = useRef({});
   const pollRef  = useRef(null);
+  const pctMaxRef = useRef(0);  // monotonic progress — never let the bar jump backwards
+  const notifiedRef = useRef(false);  // fire the "complete" browser notification once
+
+  // Ask once for permission to show a desktop notification when testing finishes.
+  // Entirely optional — if the browser doesn't support it or the user declines,
+  // everything else works exactly the same.
+  useEffect(() => {
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+    } catch { /* no-op */ }
+  }, []);
+
+  const notifyDone = (body) => {
+    if (notifiedRef.current) return;
+    notifiedRef.current = true;
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        const n = new Notification('IMPT — testing complete', {
+          body, tag: `impt-${sessionId}`,
+        });
+        n.onclick = () => { window.focus(); n.close(); };
+      }
+    } catch { /* notifications are best-effort */ }
+  };
 
   // Load session once
   useEffect(() => {
+    pctMaxRef.current = 0;
+    setBarPct(0);
+    notifiedRef.current = false;
     getSession(sessionId)
       .then(s => setSession(s))
       .catch(() => nav('/dashboard'));
@@ -85,12 +116,18 @@ export default function Running() {
       const primaryJobs   = updated.filter(j => j.strategy !== 'exhaustive');
       const exhaustiveJob = updated.find(j => j.strategy === 'exhaustive');
       const primaryDone   = primaryJobs.length > 0 &&
-        primaryJobs.every(j => ['COMPLETED','FAILED'].includes(j.status?.toUpperCase()));
+        primaryJobs.every(j => ['COMPLETED','FAILED','CANCELLED'].includes(j.status?.toUpperCase()));
       const exhaustiveDone = !exhaustiveJob ||
-        ['COMPLETED','FAILED'].includes(exhaustiveJob.status?.toUpperCase());
+        ['COMPLETED','FAILED','CANCELLED'].includes(exhaustiveJob.status?.toUpperCase());
+      const wasStopped = updated.some(j => (j.status || '').toUpperCase() === 'CANCELLED')
+        || (session?.status || '') === 'stopped';
 
-      if (primaryDone && exhaustiveDone) {
+      if (wasStopped) {
         ws.close();
+        setTimeout(() => nav(`/results/${sessionId}`), 1200);
+      } else if (primaryDone && exhaustiveDone) {
+        ws.close();
+        notifyDone('All testing complete. Your results are ready.');
         setLogs(l => [...l, {
           t: new Date().toLocaleTimeString('en-US',{hour12:false}),
           msg: '✅ All testing complete! Redirecting to results…',
@@ -99,6 +136,7 @@ export default function Running() {
         setTimeout(() => nav(`/results/${sessionId}`), 2000);
       } else if (primaryDone && !exhaustiveDone) {
         setPrimaryOnlyDone(true);
+        notifyDone('Your results are ready. The exhaustive baseline is still finishing.');
         setLogs(l => {
           if (l.some(x => x.msg?.includes('Waiting for exhaustive'))) return l;
           return [...l, {
@@ -123,7 +161,9 @@ export default function Running() {
             const updated = [...prev];
             updated[idx] = { ...updated[idx],
               executed_mutants: msg.executed, killed_mutants: msg.killed,
-              total_mutants: msg.total, mutation_score: msg.score / 100 };
+              total_mutants: msg.total,
+              selected_mutants: msg.selected ?? updated[idx].selected_mutants,
+              mutation_score: msg.score / 100 };
             handleJobs(updated);
             return updated;
           });
@@ -132,6 +172,9 @@ export default function Running() {
             msg:  `[${msg.strategy?.toUpperCase()}] ${msg.executed}/${msg.total} executed — ${msg.score}% killed`,
             type: 'running', key: Date.now(),
           }].slice(-150));
+        } else if (msg.type === 'bar') {
+          // Live Stryker progress percentage (JS runs) — advances the bar only.
+          setBarPct(p => Math.max(p, msg.pct || 0));
         }
       } catch {}
     };
@@ -171,13 +214,27 @@ export default function Running() {
   // so the results page can't be opened mid-run on incomplete data.
   const primaryJobsDone = jobs.filter(j => j.strategy !== 'exhaustive');
   const primaryDone = primaryJobsDone.length > 0 &&
-    primaryJobsDone.every(j => ['COMPLETED','FAILED'].includes((j.status || '').toUpperCase()));
+    primaryJobsDone.every(j => ['COMPLETED','FAILED','CANCELLED'].includes((j.status || '').toUpperCase()));
   const budget       = session?.time_budget_minutes ? session.time_budget_minutes * 60 : 1200;
   const totalMutants = impt?.total_mutants || session?.estimated_mutant_count || 0;
+  const selectedCount = impt?.selected_mutants || 0;
   const execMutants  = impt?.executed_mutants || 0;
-  const pct          = totalMutants > 0
-    ? Math.min(98, Math.round((execMutants / totalMutants) * 100))
-    : Math.min(90, Math.round((elapsed / budget) * 100));
+  // Progress is measured against the mutants that will actually be executed
+  // (the selected subset), not the full generated pool — otherwise the bar
+  // caps at selected/total and never reaches 100%. Before selection is known,
+  // fall back to the full pool, then to a time-based estimate. The value is
+  // clamped monotonic so it never jumps backwards across phase transitions.
+  const isComplete   = ['COMPLETED','FAILED'].includes((impt?.status || '').toUpperCase());
+  const execDenom    = selectedCount > 0 ? selectedCount : totalMutants;
+  const countPct     = isComplete ? 100
+    : execDenom > 0 ? (execMutants / execDenom) * 100
+    : (elapsed / budget) * 100;
+  // barPct carries Stryker's live percentage for JS runs, where the count-based
+  // value stays ~0 during the opaque filtered run. Take whichever is further along.
+  const rawPct       = Math.max(countPct, isComplete ? 100 : barPct);
+  const cappedPct    = Math.min(isComplete ? 100 : 99, Math.round(rawPct));
+  if (cappedPct > pctMaxRef.current) pctMaxRef.current = cappedPct;
+  const pct          = pctMaxRef.current;
   const score        = execMutants > 0
     ? ((impt.killed_mutants / execMutants) * 100).toFixed(1)
     : '—';
@@ -222,8 +279,8 @@ export default function Running() {
             <div style={{ display:'flex', justifyContent:'space-between', fontSize:12.5, color:'var(--gray-500)' }}>
               {/* Mutant count display — FR requirement: show x of y */}
               <span>
-                {totalMutants > 0
-                  ? `Executing mutant ${execMutants} of ${totalMutants}`
+                {execDenom > 0
+                  ? `Executing mutant ${Math.min(execMutants, execDenom)} of ${execDenom}`
                   : `Elapsed: ${Math.floor(elapsed/60)}m ${elapsed%60}s`
                 }
               </span>
@@ -349,15 +406,18 @@ export default function Running() {
           )}
 
           <div className="flex justify-end gap-3 mt-4">
-            {/* FR103 — Stop with confirmation */}
-            <button className="btn btn-secondary"
-              onClick={() => {
-                if (window.confirm('Are you sure you want to stop? Partial results may be available.')) {
-                  clearInterval(pollRef.current);
-                  nav(`/results/${sessionId}`);
-                }
+            {/* FR103 — Stop with confirmation. Actually cancels the run on the
+                server (cooperative cancel + best-effort task revoke), not just
+                a client-side navigate. */}
+            <button className="btn btn-secondary" disabled={stopping}
+              onClick={async () => {
+                if (!window.confirm('Stop testing for this session? In-progress work will be cancelled and partial results may be available.')) return;
+                setStopping(true);
+                try { await stopTesting(sessionId); } catch { /* best-effort */ }
+                clearInterval(pollRef.current);
+                nav(`/results/${sessionId}`);
               }}>
-              ■ Stop Testing
+              {stopping ? 'Stopping…' : '■ Stop Testing'}
             </button>
             <button className="btn btn-dark" disabled={!primaryDone}
               title={primaryDone ? 'View results' : 'Available once testing completes'}
@@ -369,11 +429,13 @@ export default function Running() {
           {primaryOnlyDone && (
             <div style={{ marginTop:12, padding:'12px 16px', background:'#EFF6FF',
               border:'1px solid #BFDBFE', borderRadius:8, fontSize:13 }}>
-              <strong>⏳ Primary strategy complete — waiting for exhaustive baseline</strong>
+              <strong>✅ Results ready — exhaustive baseline still running</strong>
               <div style={{ marginTop:4, color:'var(--gray-600)', lineHeight:1.6 }}>
-                The exhaustive baseline is still running. The page will automatically redirect
-                to results with <strong>Ground Truth</strong> correlation once it finishes.
-                Please keep this page open.
+                Your results are saved and ready to view now. The exhaustive baseline
+                is still computing in the background; the <strong>Ground Truth</strong>{' '}
+                correlation will appear on the results page once it finishes.
+                You can safely close this tab — it keeps running on the server, and
+                this page will redirect automatically if you stay.
               </div>
               <div style={{ marginTop:8 }}>
                 <button className="btn btn-secondary btn-sm"

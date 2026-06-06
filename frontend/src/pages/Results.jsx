@@ -208,8 +208,10 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
                  total_mutants:primaryJob?.total_mutants, killed_mutants:primaryJob?.killed_mutants,
                  execution_time_seconds:primaryJob?.execution_time_seconds, time_saved_pct:timeSavedPct,
                  exhaustive_score:baselineScore, exhaustive_label:baselineLabel, correlation },
-      mutants: mutants.map(m=>({operator:m.operator,file:m.file,line:m.line,status:m.status,
-                                priority_score:m.priority_score,original_code:m.original_code,mutated_code:m.mutated_code})),
+      mutants: mutants.map(m=>({mutant_hash:m.mutant_hash,operator:m.operator,file:m.file,line:m.line,
+                                status:m.status,priority_score:m.priority_score,execution_time:m.execution_time,
+                                killing_test:m.killing_test||null,original_code:m.original_code,
+                                mutated_code:m.mutated_code,explanation:m.explanation||null})),
       exported_at: new Date().toISOString(),
       generated_by: 'IMPT v2 — NovaSoft · FEU Institute of Technology',
     };

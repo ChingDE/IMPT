@@ -24,6 +24,31 @@ const OPERATORS = [
   { code:'SDL',           name:'Statement Deletion',              eff:40, lvl:'Low',       framework:'both', desc:'Deletes an entire statement or block. Lower fault-detection rate per Just et al. (2014).' },
 ];
 
+// Shared run-time estimate model — used by both the Budget step and the Review
+// step so the numbers stay consistent across the wizard. All values are rough,
+// LOC/operator-based heuristics; actual time depends on the test suite's speed.
+// Two phases: Phase 1 enumerates every mutant once (a fixed discovery cost not
+// counted against the budget), Phase 3 executes the prioritized subset within
+// the budget. The exhaustive baseline, when selected, re-runs the FULL mutant
+// set with no time cap — that is why it is shown as a separate, additive cost.
+function estimateRunTime({ loc = 5000, language, operatorCount = 5, budget = 20,
+                           strategy = 'impt', runExhaustive = false }) {
+  const isJava        = language === 'java';
+  const estMutants    = Math.max(10, Math.round((loc || 0) * 0.3 * ((operatorCount || 5) / 8)));
+  const secPerMutant  = isJava ? 2.5 : 0.8;
+  const exhaustiveMin = Math.max(1, Math.round(estMutants * secPerMutant / 60));
+  const reductionPct  = strategy === 'impt' ? 0.65 : strategy === 'operator_based' ? 0.5 : 0.6;
+  const estPrimaryMin = Math.max(1, Math.round(exhaustiveMin * (1 - reductionPct)));
+  const primaryMin    = Math.min(estPrimaryMin, budget);          // capped by the chosen budget
+  const ph1Secs       = Math.max(10, Math.round((loc || 0) / 15000 * 60));
+  const ph1Min        = Math.round(ph1Secs / 60);
+  const totalMin      = ph1Min + primaryMin + (runExhaustive ? exhaustiveMin : 0);
+  const fmt = m => m < 1 ? '< 1 min' : m < 60 ? `~${m} min` : `~${(m / 60).toFixed(1)} hr`;
+  const ph1Fmt = ph1Secs < 60 ? '<1 min' : ph1Min < 2 ? '~1 min' : `~${ph1Min} min`;
+  return { estMutants, secPerMutant, exhaustiveMin, estPrimaryMin, primaryMin,
+           ph1Secs, ph1Min, ph1Fmt, totalMin, isLargeProject: (loc || 0) > 10000, fmt };
+}
+
 // ── Step 1: Create session ─────────────────────────────────────
 export function NewSessionCreate() {
   const nav = useNavigate();
@@ -492,12 +517,14 @@ export function NewSessionBudget() {
   const correlation = budget >= 30 ? 'High (≥0.95)' : budget >= 15 ? 'Medium (0.85-0.94)' : 'Low (<0.85)';
   const corrColor   = budget >= 30 ? 'var(--green)' : budget >= 15 ? 'var(--amber)' : 'var(--red)';
 
-  // Phase 1 estimate for budget page
-  const loc         = session?.loc || 0;
-  const ph1Sec      = Math.max(10, Math.round(loc / 15000 * 60));
-  const ph1Label    = ph1Sec < 60 ? `<1 min` : ph1Sec < 120 ? '~1 min' : `~${Math.round(ph1Sec/60)} min`;
-  const totalEstMin = budget + Math.round(ph1Sec / 60);
-  const showPh1Warn = loc > 10000;
+  // Phase 1 estimate + full run-time breakdown for the budget page.
+  const loc       = session?.loc || 0;
+  const opCount   = session?.selected_operators ? JSON.parse(session.selected_operators).length : 5;
+  const est       = estimateRunTime({ loc, language: session?.language, operatorCount: opCount,
+                                      budget, strategy, runExhaustive });
+  const ph1Label    = est.ph1Fmt;
+  const totalEstMin = est.totalMin;
+  const showPh1Warn = est.isLargeProject;
 
   const STRATEGIES = [
     { value:'impt',           label:'⭐ IMPT Intelligent Prioritization', desc:'Multi-factor scoring, subsumption analysis, knapsack optimization. Recommended.' },
@@ -616,6 +643,7 @@ export function NewSessionBudget() {
                   ['Confidence Level', budget>=30?'High':budget>=15?'Medium':'Low', corrColor],
                   ['Phase 1 (Mutant Discovery)', ph1Label, 'var(--amber)'],
                   ['Phase 3 (Mutation Testing)', `${budget} min`, 'var(--purple-mid)'],
+                  ...(runExhaustive ? [['Exhaustive Baseline (full set)', est.fmt(est.exhaustiveMin), 'var(--amber)']] : []),
                   ['Total Estimated Time', `~${totalEstMin} min`, 'var(--gray-900)'],
                 ].map(([l,v,c])=>(
                   <div className="summary-row" key={l}>
@@ -629,6 +657,13 @@ export function NewSessionBudget() {
                     ⚠ Large project detected ({loc.toLocaleString()} LOC). Phase 1 adds ~{ph1Label} before your budget starts.
                   </div>
                 )}
+                <div style={{ fontSize:11, color:'var(--gray-500)', marginTop:8, lineHeight:1.55 }}>
+                  Phase 1 enumerates every mutant once. The first run of a project pays this
+                  cost; re-runs of the same project reuse the cached enumeration and start faster.
+                  {runExhaustive
+                    ? ' The exhaustive baseline re-runs the full mutant set with no time cap (it bypasses the budget\u2019s time savings) and continues in the background after your strategy finishes.'
+                    : ' Times are rough estimates and vary with your test suite\u2019s speed.'}
+                </div>
               </div>
             </div>
           </div>
@@ -719,27 +754,19 @@ export function NewSessionReview() {
             const budget      = session?.time_budget_minutes || 20;
             const loc         = session?.loc || 5000;
             const opCount     = ops.length || 5;
-            const isJava      = session?.language === 'java';
             const isExhaustive = session?.run_exhaustive;
-
-            // Base estimate: ~0.5s per mutant for JS (mocha), ~2s for Java (PIT)
-            // Rough mutant density: ~3 mutants per 10 LOC
-            const estMutants   = Math.round(loc * 0.3 * (opCount / 8));
-            const secPerMutant = isJava ? 2.5 : 0.8;
-            const rawExhaustive = Math.round(estMutants * secPerMutant / 60); // minutes
             const strategy     = session?.selected_strategy || 'impt';
-            const reductionPct = strategy === 'impt' ? 0.65 : strategy === 'operator_based' ? 0.5 : 0.6;
-            const estPrimary   = Math.max(1, Math.round(rawExhaustive * (1 - reductionPct)));
-            const estTotal     = isExhaustive ? estPrimary + rawExhaustive : estPrimary;
-            const cappedPrimary = Math.min(estPrimary, budget);
 
-            const fmt = m => m < 1 ? '< 1 min' : m < 60 ? `~${m} min` : `~${(m/60).toFixed(1)} hr`;
-
-            const ph1Secs    = Math.max(10, Math.round(loc / 15000 * 60));
-            const ph1Min     = Math.round(ph1Secs / 60);
-            const ph1Fmt     = ph1Secs < 60 ? '<1 min' : ph1Min < 2 ? '~1 min' : `~${ph1Min} min`;
-            const totalWithPh1 = Math.min(estTotal, budget + (isExhaustive ? rawExhaustive : 0)) + ph1Min;
-            const isLargeProject = loc > 10000;
+            const est           = estimateRunTime({ loc, language: session?.language,
+                                    operatorCount: opCount, budget, strategy,
+                                    runExhaustive: isExhaustive });
+            const estMutants    = est.estMutants;
+            const cappedPrimary = est.primaryMin;
+            const rawExhaustive = est.exhaustiveMin;
+            const fmt           = est.fmt;
+            const ph1Fmt        = est.ph1Fmt;
+            const totalWithPh1  = est.totalMin;
+            const isLargeProject = est.isLargeProject;
 
             return (
               <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8,
