@@ -49,6 +49,28 @@ STATUS_MAP = {
 }
 
 
+def _slice_source(source: str, loc: dict) -> str:
+    """Extract the original code span Stryker mutated, from the file source and
+    the mutant location. Stryker locations are 1-based line, 1-based column.
+    Returns "" if the source or location is unavailable."""
+    if not source or not loc:
+        return ""
+    start = loc.get("start", {}) or {}
+    end   = loc.get("end", {}) or {}
+    sl, sc = start.get("line", 1), start.get("column", 1)
+    el, ec = end.get("line", sl), end.get("column", sc)
+    lines = source.splitlines()
+    try:
+        if sl == el:
+            return lines[sl-1][sc-1:ec-1].strip()
+        span = [lines[sl-1][sc-1:]]
+        span += lines[sl:el-1]
+        span.append(lines[el-1][:ec-1])
+        return "\n".join(span).strip()
+    except (IndexError, ValueError):
+        return ""
+
+
 class StrykerAdapter:
     def __init__(self, project_dir: Path, use_docker: bool = True,
                  sandbox_image: str = "impt-sandbox:latest",
@@ -789,7 +811,8 @@ class StrykerAdapter:
         data = json.loads(report_path.read_text())
         if "files" in data:
             raw = [
-                dict(list(m.items()) + [("_file", fname)])
+                dict(list(m.items()) + [("_file", fname),
+                                        ("_source", fd.get("source", ""))])
                 for fname, fd in data["files"].items()
                 for m in fd.get("mutants", [])
             ]
@@ -818,8 +841,9 @@ class StrykerAdapter:
                         line=start.get("line", 1),
                         column=start.get("column", 0),
                     ),
-                    original_code=rm.get("replacement", "original"),
-                    mutated_code =rm.get("replacement", rm.get("mutatorName", "")),
+                    original_code=_slice_source(rm.get("_source", ""), loc)
+                                  or rm.get("mutatorName", ""),
+                    mutated_code =rm.get("replacement", "") or rm.get("mutatorName", ""),
                     test_coverage=test_coverage,
                 )
                 m.status = status
