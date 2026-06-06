@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { forgotPassword } from '../api/client';
-import { Alert, LogoMark } from '../components/UI';
+import { Alert, LogoMark, AuthAside } from '../components/UI';
 
 export function ForgotPassword() {
   const nav = useNavigate();
@@ -24,7 +24,7 @@ export function ForgotPassword() {
   };
 
   return (
-    <div className="auth-page">
+    <div className="auth-page"><AuthAside />
       <div className="auth-card">
         <div className="auth-logo">
           <LogoMark size={24} />
@@ -100,7 +100,7 @@ export function ResetPassword() {
   };
 
   if (!token) return (
-    <div className="auth-page">
+    <div className="auth-page"><AuthAside />
       <div className="auth-card">
         <Alert type="error">Invalid password reset link. Please request a new one.</Alert>
         <button className="btn btn-secondary btn-full" onClick={() => nav('/forgot-password')}>Request New Link</button>
@@ -109,7 +109,7 @@ export function ResetPassword() {
   );
 
   return (
-    <div className="auth-page">
+    <div className="auth-page"><AuthAside />
       <div className="auth-card">
         <div className="auth-logo">
           <LogoMark size={24} />

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { adminLogin } from '../api/client';
-import { Alert } from '../components/UI';
+import { Alert, AuthAside } from '../components/UI';
 
 export function AdminLogin() {
   const nav = useNavigate();
@@ -28,7 +28,7 @@ export function AdminLogin() {
   };
 
   return (
-    <div className="auth-page">
+    <div className="auth-page"><AuthAside />
       <div className="auth-card">
         <div className="auth-logo">
           <img src="/logo.png" width={64} height={64} alt="IMPT Logo"
@@ -101,7 +101,7 @@ export function AdminFirstLogin() {
   };
 
   return (
-    <div className="auth-page">
+    <div className="auth-page"><AuthAside />
       <div className="auth-card wide">
         <div className="auth-logo">
           <img src="/logo.png" width={64} height={64} alt="IMPT Logo"

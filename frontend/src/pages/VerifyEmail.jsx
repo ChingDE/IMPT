@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { resendVerification } from '../api/client';
-import { Alert, LogoMark } from '../components/UI';
+import { Alert, LogoMark, AuthAside } from '../components/UI';
 
 export function VerifyEmailSent() {
   const nav = useNavigate();
@@ -25,7 +25,7 @@ export function VerifyEmailSent() {
   };
 
   return (
-    <div className="auth-page">
+    <div className="auth-page"><AuthAside />
       <div className="auth-card">
         <div className="auth-logo">
           <div style={{ fontSize: 48, marginBottom: 12 }}>📧</div>
@@ -86,7 +86,7 @@ export function VerifyEmail() {
   };
 
   return (
-    <div className="auth-page">
+    <div className="auth-page"><AuthAside />
       <div className="auth-card">
         <div className="auth-logo">
           <LogoMark size={24} />

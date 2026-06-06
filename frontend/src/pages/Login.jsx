@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { login } from '../api/client';
-import { Alert, LogoMark } from '../components/UI';
+import { Alert, AuthAside } from '../components/UI';
 
 const REMEMBER_KEY = 'impt_remembered_email';
 
@@ -67,15 +67,11 @@ export default function Login() {
   );
 
   return (
-    <div className="auth-page">
+    <div className="auth-page"><AuthAside />
       <div className="auth-card">
         <div className="auth-logo">
-          <LogoMark size={64} />
-          <div style={{ marginTop:12 }}>
-            <div className="auth-brand">NovaSoft</div>
-            <div className="auth-sub">Innovation Software</div>
-            <div className="auth-tagline">Intelligent Mutation Prioritization Tool</div>
-          </div>
+          <div className="auth-brand">Sign in</div>
+          <div className="auth-sub">Welcome back. Use your work email to continue.</div>
         </div>
 
         {reason === 'unverified' && (

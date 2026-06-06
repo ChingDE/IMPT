@@ -1,5 +1,5 @@
 // src/components/UI.jsx
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -15,6 +15,36 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 export const LogoMark = ({ size = 36 }) => (
   <img src="/logo.png" alt="IMPT Logo" style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }} />
 );
+
+// Left brand panel for the auth pages (split layout). The dashboard screenshot
+// is rendered greyed-out behind this content via the .auth-aside::before rule.
+export function AuthAside() {
+  return (
+    <aside className="auth-aside">
+      <div className="auth-aside-top">
+        <LogoMark size={36} />
+        <div>
+          <div className="auth-aside-brand">IMPT</div>
+          <div className="auth-aside-tagline">Mutation testing · v2</div>
+        </div>
+      </div>
+      <div className="auth-aside-mid">
+        <h1 className="auth-aside-headline">Test smarter, <em>not exhaustively.</em></h1>
+        <p className="auth-aside-blurb">
+          IMPT prioritizes the mutants most likely to find real bugs in your code,
+          then proves the result with statistical confidence — typically in a fifth of the time.
+        </p>
+      </div>
+      <div className="auth-aside-footer">
+        <span>NovaSoft · FEU Institute of Technology · 2025–2026</span>
+        <span className="auth-aside-links">
+          <Link to="/privacy">Privacy</Link>
+          <Link to="/terms">Terms</Link>
+        </span>
+      </div>
+    </aside>
+  );
+}
 
 // ── Sidebar ───────────────────────────────────────────────────────
 export function Sidebar() {

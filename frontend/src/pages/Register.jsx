@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { register } from '../api/client';
-import { Alert, LogoMark } from '../components/UI';
+import { Alert, LogoMark, AuthAside } from '../components/UI';
 import { CheckCircle } from 'lucide-react';
 
 // ── Password strength — defined OUTSIDE Register so it never remounts ─────────
@@ -118,7 +118,7 @@ export default function Register() {
   };
 
   return (
-    <div className="auth-page">
+    <div className="auth-page"><AuthAside />
       <div className="auth-card wide">
         <div className="auth-logo">
           <LogoMark size={24} />
