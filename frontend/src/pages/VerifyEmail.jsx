@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { resendVerification } from '../api/client';
-import { Alert, LogoMark, AuthAside } from '../components/UI';
+import { Alert, AuthAside } from '../components/UI';
 
 export function VerifyEmailSent() {
   const nav = useNavigate();
@@ -88,9 +88,6 @@ export function VerifyEmail() {
   return (
     <div className="auth-page"><AuthAside />
       <div className="auth-card">
-        <div className="auth-logo">
-          <LogoMark size={24} />
-        </div>
 
         {state === 'loading' && (
           <div style={{ textAlign: 'center', padding: '20px', color: 'var(--gray-500)' }}>

@@ -92,9 +92,9 @@ input,select,textarea{font-family:var(--font)}
   background:url('/auth-dashboard.png') center/cover no-repeat;
   filter:grayscale(1);opacity:.18;pointer-events:none}
 .auth-aside > *{position:relative;z-index:1}
-.auth-aside-top{display:flex;align-items:center;gap:12px}
-.auth-aside-brand{font-size:18px;font-weight:800;letter-spacing:-.3px;color:var(--gray-900);line-height:1.1}
-.auth-aside-tagline{font-size:13px;color:var(--gray-500)}
+.auth-aside-top{display:flex;align-items:center;gap:14px}
+.auth-aside-brand{font-size:26px;font-weight:800;letter-spacing:-.3px;color:var(--gray-900);line-height:1.1}
+.auth-aside-tagline{font-size:15px;color:var(--gray-500);line-height:1.25}
 .auth-aside-mid{max-width:560px}
 .auth-aside-headline{font-size:54px;line-height:1.05;font-weight:800;letter-spacing:-1.4px;margin:0 0 20px;color:var(--gray-900)}
 .auth-aside-headline em{font-style:italic;font-weight:700}

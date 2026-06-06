@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { forgotPassword } from '../api/client';
-import { Alert, LogoMark, AuthAside } from '../components/UI';
+import { Alert, AuthAside } from '../components/UI';
 
 export function ForgotPassword() {
   const nav = useNavigate();
@@ -27,8 +27,7 @@ export function ForgotPassword() {
     <div className="auth-page"><AuthAside />
       <div className="auth-card">
         <div className="auth-logo">
-          <LogoMark size={24} />
-          <div style={{ marginTop: 10 }}>
+          <div>
             <div className="auth-brand">Reset Password</div>
             <div className="auth-sub">Enter your email to receive reset instructions</div>
           </div>
@@ -112,8 +111,7 @@ export function ResetPassword() {
     <div className="auth-page"><AuthAside />
       <div className="auth-card">
         <div className="auth-logo">
-          <LogoMark size={24} />
-          <div style={{ marginTop: 10 }}>
+          <div>
             <div className="auth-brand">Set New Password</div>
           </div>
         </div>

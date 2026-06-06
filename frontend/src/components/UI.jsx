@@ -22,10 +22,10 @@ export function AuthAside() {
   return (
     <aside className="auth-aside">
       <div className="auth-aside-top">
-        <LogoMark size={36} />
+        <LogoMark size={56} />
         <div>
           <div className="auth-aside-brand">IMPT</div>
-          <div className="auth-aside-tagline">Mutation testing · v2</div>
+          <div className="auth-aside-tagline">Intelligent Mutation Prioritization Tool</div>
         </div>
       </div>
       <div className="auth-aside-mid">
