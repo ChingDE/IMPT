@@ -188,7 +188,12 @@ async def main():
         help="Use pre-collected IMPT scores from weight validation run")
     parser.add_argument("--impt-only", action="store_true",
         help="Run IMPT sessions only")
+    parser.add_argument("--budget", type=int, default=10, 
+        help="Time budget in minutes")
     args = parser.parse_args()
+    global BUDGET_MINUTES, MAX_WAIT
+    BUDGET_MINUTES = args.budget
+    MAX_WAIT = max(1800, args.budget * 60 + 600)
     base = args.url.rstrip("/")
 
     projects = [s.strip() for s in args.projects.split(",")] \
