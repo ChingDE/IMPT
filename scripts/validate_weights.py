@@ -128,7 +128,7 @@ async def get_foss_id(client, base, token, slug):
     raise ValueError(f"FOSS project '{slug}' not found")
 
 async def create_session(client, base, token, name, foss_id, slug,
-                         weight_config=None, exhaustive=False):
+                         weight_config=None, exhaustive=False, budget_minutes=None):
     lang = language_for(slug)
     ops  = operators_for(slug)
     r = await client.post(f"{base}/api/sessions", headers=hdr(token), json={
@@ -144,7 +144,7 @@ async def create_session(client, base, token, name, foss_id, slug,
 
     # Java exhaustive needs a longer budget (PIT builds take longer)
     # Capped at 120 to match TimeBudgetRequest schema limit
-    budget = 120 if exhaustive else BUDGET_MINUTES
+    budget = budget_minutes if budget_minutes is not None else (120 if exhaustive else BUDGET_MINUTES)
     r3 = await client.post(f"{base}/api/sessions/{sid}/budget", headers=hdr(token), json={
         "time_budget_minutes":  budget,
         "selected_strategy":    "impt",
@@ -232,35 +232,36 @@ def _primary_job_id(jobs):
     return jid
 
 async def get_capture_records(client, base, token, sid):
-    """Full per-mutant records for the offline budget-sweep simulator, pulled
-    from the job CSV export (guaranteed to include execution time and operator).
+    """Full per-mutant records from the JSON /mutants endpoint (full precision;
+    carries priority_score and execution_time for a non-exhaustive IMPT run).
 
     Returns list of {priority_score, execution_time, killed, operator}.
+    NOTE: an IMPT run records only the mutants it selected (after subsumption and
+    budget), not the full pool — sufficient for the IMPT budget curve and the
+    per-mutant correlation, but not for reconstructing Random/Operator-Based.
     """
-    import csv as _csv, io as _io
     jobs = await get_jobs(client, base, token, sid)
     job_id = _primary_job_id(jobs)
     if not job_id:
         return []
-    r = await client.get(f"{base}/api/jobs/{job_id}/export/csv", headers=hdr(token))
+    r = await client.get(f"{base}/api/jobs/{job_id}/mutants", headers=hdr(token))
     if r.status_code != 200:
-        print(f"    [capture] export/csv -> HTTP {r.status_code}")
+        print(f"    [capture] /mutants -> HTTP {r.status_code}")
         return []
     out = []
-    for row in _csv.DictReader(_io.StringIO(r.text)):
-        status = (row.get("Status") or "").upper()
+    for rec in r.json():
+        status = (rec.get("status") or "").upper()
         if status not in ("KILLED", "SURVIVED"):
             continue
-        try:
-            et = float(row.get("Execution Time (s)") or 0)
-            ps = float(row.get("Priority Score") or 0)
-        except (TypeError, ValueError):
+        ps = rec.get("priority_score")
+        et = rec.get("execution_time", rec.get("execution_time_seconds"))
+        if ps is None or et is None:
             continue
         out.append({
-            "priority_score": ps,
-            "execution_time": et,
+            "priority_score": float(ps),
+            "execution_time": float(et),
             "killed": 1 if status == "KILLED" else 0,
-            "operator": row.get("Operator"),
+            "operator": rec.get("operator"),
         })
     return out
 
@@ -372,6 +373,10 @@ async def main():
         help="Run exhaustive baselines only — skip weight config experiments")
     parser.add_argument("--weights-only", action="store_true",
         help="Run weight config experiments only — skip exhaustive baselines")
+    parser.add_argument("--capture-only", action="store_true",
+        help="Run non-exhaustive IMPT sessions and save per-mutant capture_<slug>.json")
+    parser.add_argument("--capture-budget", type=int, default=60,
+        help="Budget (min) for capture runs (default 60: covers 10/30/60 prefixes)")
     args = parser.parse_args()
     base = args.url.rstrip("/")
 
@@ -416,6 +421,40 @@ async def main():
             foss_ids[slug] = await get_foss_id(client, base, token, slug)
             print(f"✓ Resolved {slug} → {foss_ids[slug][:8]}…")
 
+        # ── Capture-only mode: per-mutant data for the budget sweep ───────────
+        if args.capture_only:
+            print(f"\n{'-'*70}")
+            print(f"CAPTURE MODE — non-exhaustive IMPT runs ({args.capture_budget}-min, Proposed weights)")
+            print(f"{'-'*70}")
+            for slug in PROJECTS:
+                token = await refresh_token(client, base, args.email, args.password)
+                print(f"\n  [{slug}] capture run…")
+                try:
+                    sid = await create_session(client, base, token,
+                        f"capture-{slug}-{datetime.now().strftime('%H%M%S')}",
+                        foss_ids[slug], slug,
+                        weight_config=PROPOSED_WEIGHTS, exhaustive=False,
+                        budget_minutes=args.capture_budget)
+                    final = await poll(client, base, token, sid, max_wait=MAX_WAIT_EXHAUSTIVE)
+                    if final and final.get("status") == "completed":
+                        recs  = await get_capture_records(client, base, token, sid)
+                        total = final.get("total_mutants") or len(recs)
+                        with open(f"capture_{slug}.json", "w") as cf:
+                            json.dump({
+                                "project": slug,
+                                "capture_budget_minutes": args.capture_budget,
+                                "total_mutants": total,
+                                "n_records": len(recs),
+                                "captured_is_impt_selection": True,
+                                "mutants": recs,
+                            }, cf, indent=2)
+                        print(f"  [{slug}] captured {len(recs)}/{total} selected mutants → capture_{slug}.json")
+                    else:
+                        print(f"  [{slug}] ⚠ capture run failed")
+                except Exception as e:
+                    print(f"  [{slug}] ❌ {e}")
+            return
+
         # ── Step 2: Exhaustive baselines ──────────────────────────────────────
         if not args.skip_exhaustive:
             print(f"\n{'─'*70}")
@@ -438,18 +477,6 @@ async def main():
                         score = await get_exhaustive_score(client, base, token, sid)
                         exhaustive[slug] = score
                         print(f"  [{slug}] Exhaustive score: {(score or 0)*100:.1f}%")
-                        # Capture full per-mutant records for the budget-sweep simulator
-                        recs = await get_capture_records(client, base, token, sid)
-                        total = (final.get("total_mutants") or len(recs))
-                        with open(f"capture_{slug}.json", "w") as cf:
-                            json.dump({
-                                "project": slug,
-                                "capture_budget_seconds": MAX_WAIT_EXHAUSTIVE,
-                                "completed_all_mutants": len(recs) >= (total or 0),
-                                "n_records": len(recs),
-                                "mutants": recs,
-                            }, cf, indent=2)
-                        print(f"  [{slug}] captured {len(recs)} mutant records → capture_{slug}.json")
                     else:
                         print(f"  [{slug}] ⚠ Exhaustive run failed — using None")
                         exhaustive[slug] = None
