@@ -128,7 +128,10 @@ export default function CompareResults() {
 
         {/* Session selector */}
         <div className="card mb-4">
-          <div style={{ fontSize:14, fontWeight:600, marginBottom:12 }}>Select Sessions to Compare</div>
+          <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>Select Sessions to Compare</div>
+          <div style={{ fontSize:12, color:'var(--gray-500)', marginBottom:12 }}>
+            Only completed sessions are listed — sessions still running or that ended without results can't be compared.
+          </div>
           <div style={{ display:'flex', gap:12, alignItems:'flex-end', flexWrap:'wrap' }}>
             <div style={{ flex:1, minWidth:200 }}>
               <div style={{ fontSize:11, color:'var(--gray-500)', marginBottom:4, fontWeight:600 }}>SESSION A</div>

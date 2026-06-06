@@ -68,6 +68,8 @@ export default function Reports() {
   );
 
   const { total_tests, avg_score, avg_time_secs, projects_tested, trend, distribution, recent } = stats;
+  // Map session id -> name (from the recent list) so trend points can name their session on hover.
+  const nameById = Object.fromEntries((recent || []).map(r => [r.session_id, r.name]));
   const distMax = Math.max(...Object.values(distribution), 1);
   const trendMin = trend.length ? Math.min(...trend.map(t => t.score)) - 5 : 0;
   const trendMax = trend.length ? Math.max(...trend.map(t => t.score)) + 5 : 100;
@@ -108,10 +110,19 @@ export default function Reports() {
           <path d={area} fill="url(#areaGrad)" />
           {/* Line */}
           <path d={path} fill="none" stroke="#7C3AED" strokeWidth={2.5} strokeLinejoin="round" />
-          {/* Dots */}
-          {xs.map((x, i) => (
-            <circle key={i} cx={x} cy={ys[i]} r={4} fill="#7C3AED" stroke="#fff" strokeWidth={2} />
-          ))}
+          {/* Dots — each with a larger transparent hit target and a hover tooltip naming the session */}
+          {xs.map((x, i) => {
+            const t = trend[i];
+            const label = `${nameById[t.session_id] || 'Session'} — ${t.score}% on ${t.date}`;
+            return (
+              <g key={i}>
+                <circle cx={x} cy={ys[i]} r={4} fill="#7C3AED" stroke="#fff" strokeWidth={2} />
+                <circle cx={x} cy={ys[i]} r={10} fill="transparent" style={{ cursor:'pointer' }}>
+                  <title>{label}</title>
+                </circle>
+              </g>
+            );
+          })}
         </svg>
         <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'var(--gray-400)', marginTop:4 }}>
           {trend.map((t, i) => <span key={i}>{t.date}</span>)}

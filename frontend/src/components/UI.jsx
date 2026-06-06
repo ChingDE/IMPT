@@ -6,7 +6,7 @@ import {
   Home, PlayCircle, BarChart2, Settings, Clock, Save, HelpCircle,
   TrendingUp, History, GitCompare,
   User, Shield, Info, CheckCircle, XCircle, AlertTriangle, X,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, LogOut,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
@@ -148,8 +148,9 @@ export function Sidebar() {
           <button title="Sign out"
             onClick={() => { signOut(); nav('/login'); }}
             style={{ background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--gray-400)', padding: '6px' }}>
-            ⏻
+              color: 'var(--gray-400)', padding: '6px', display: 'flex',
+              alignItems: 'center', justifyContent: 'center' }}>
+            <LogOut size={16} />
           </button>
           <button title="Expand sidebar" onClick={() => toggleCollapsed(false)}
             style={{ background: 'none', border: 'none', cursor: 'pointer',

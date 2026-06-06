@@ -8,6 +8,14 @@ const STRATEGY_LABEL = { impt: '⭐ IMPT Intelligent', random: 'Random Sampling'
 
 const PHASES = ['Generating Mutants', 'Prioritizing', 'Executing Test Suite', 'Analyzing Results'];
 
+// Parse a server timestamp. The backend stores naive UTC, so when the string
+// carries no timezone designator we assume UTC rather than the browser's locale.
+function parseServerTime(s) {
+  if (!s) return null;
+  const hasTz = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(s);
+  return new Date(hasTz ? s : s + 'Z');
+}
+
 export default function Running() {
   const { sessionId } = useParams();
   const nav = useNavigate();
@@ -30,11 +38,17 @@ export default function Running() {
       .catch(() => nav('/dashboard'));
   }, [sessionId]);
 
-  // Elapsed timer
+  // Elapsed timer — anchored to the session's real start time so navigating
+  // away and back shows the true elapsed time instead of restarting from zero.
   useEffect(() => {
-    const t = setInterval(() => setElapsed(e => e + 1), 1000);
+    if (!session) return;
+    const start = parseServerTime(session.started_at) || parseServerTime(session.created_at);
+    const startMs = start ? start.getTime() : Date.now();
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+    tick();
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [session]);
 
   // WebSocket for real-time progress (manuscript Section 3.x)
   useEffect(() => {
@@ -153,6 +167,11 @@ export default function Running() {
 
   // Derived metrics from the IMPT job
   const impt         = jobs.find(j => j.strategy === 'impt') || jobs[0];
+  // Primary (non-exhaustive) strategies finished? Used to gate "View Results"
+  // so the results page can't be opened mid-run on incomplete data.
+  const primaryJobsDone = jobs.filter(j => j.strategy !== 'exhaustive');
+  const primaryDone = primaryJobsDone.length > 0 &&
+    primaryJobsDone.every(j => ['COMPLETED','FAILED'].includes((j.status || '').toUpperCase()));
   const budget       = session?.time_budget_minutes ? session.time_budget_minutes * 60 : 1200;
   const totalMutants = impt?.total_mutants || session?.estimated_mutant_count || 0;
   const execMutants  = impt?.executed_mutants || 0;
@@ -340,7 +359,10 @@ export default function Running() {
               }}>
               ■ Stop Testing
             </button>
-            <button className="btn btn-dark" onClick={() => nav(`/results/${sessionId}`)}>
+            <button className="btn btn-dark" disabled={!primaryDone}
+              title={primaryDone ? 'View results' : 'Available once testing completes'}
+              style={!primaryDone ? { opacity:0.5, cursor:'not-allowed' } : undefined}
+              onClick={() => { if (primaryDone) nav(`/results/${sessionId}`); }}>
               View Results
             </button>
           </div>

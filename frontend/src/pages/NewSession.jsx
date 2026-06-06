@@ -207,7 +207,7 @@ export function NewSessionUpload() {
                 Select a pre-loaded open-source project. These have pre-computed exhaustive baselines for ground-truth comparison.
               </p>
               {/* Language filter hidden — determined by Step 1 selection */}
-              <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:10,maxHeight:380,overflowY:'auto' }}>
+              <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:10,maxHeight:560,overflowY:'auto' }}>
                 {fossProjects
                   .filter(p => fossFilter==='all' || p.language===fossFilter)
                   .map(p => (
@@ -224,7 +224,7 @@ export function NewSessionUpload() {
                         {p.language==='java'?'Java':'JS'}
                       </span>
                     </div>
-                    <div style={{ fontSize:11,color:'var(--gray-500)',marginTop:3 }}>{p.description.slice(0,90)}…</div>
+                    <div style={{ fontSize:11,color:'var(--gray-500)',marginTop:3,lineHeight:1.5 }}>{p.description}</div>
                     <div style={{ display:'flex',gap:8,marginTop:6,flexWrap:'wrap' }}>
                       <span style={{ fontSize:10,color:'var(--gray-500)' }}>📏 {p.loc.toLocaleString()} LOC</span>
                       <span style={{ fontSize:10,color:'var(--gray-500)' }}>🏷 {p.size_band}</span>

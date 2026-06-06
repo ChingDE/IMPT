@@ -25,8 +25,6 @@ export default function Results() {
   const [page, setPage]           = useState(1);
   const [expandedId, setExpandedId] = useState(null);
   const [showExplanation, setShowExplanation] = useState(false);
-  const [showAllMutants, setShowAllMutants] = useState(false);
-  const [survivedOnly, setSurvivedOnly] = useState(false);
   const [shareUrl, setShareUrl]   = useState('');
   const [shareErr, setShareErr]   = useState('');
   const [loading, setLoading]     = useState(true);
@@ -393,88 +391,6 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
           )}
         </div>
 
-        {/* Prioritized Mutants Table */}
-        <div className="card mb-4">
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-            <div className="card-title" style={{margin:0}}>
-              🎯 Prioritized Mutants ({mutants.length})
-            </div>
-            <div style={{display:'flex',gap:8}}>
-              <button className={`btn btn-sm ${!survivedOnly?'btn-primary':'btn-secondary'}`}
-                onClick={()=>setSurvivedOnly(false)}>All</button>
-              <button className={`btn btn-sm ${survivedOnly?'btn-primary':'btn-secondary'}`}
-                onClick={()=>setSurvivedOnly(true)}>
-                ✗ Survived ({mutants.filter(m=>m.status==='SURVIVED').length})
-              </button>
-            </div>
-          </div>
-          <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:12}}>
-            Sorted by IMPT priority score (highest first). &nbsp;
-            <span style={{color:'var(--green)',fontWeight:600}}>● Killed</span> = test detected the bug &nbsp;
-            <span style={{color:'var(--red)',fontWeight:600}}>● Survived</span> = test gap — needs attention
-          </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={{width:40}}>#</th>
-                <th>Operator</th>
-                <th>File</th>
-                <th style={{width:60}}>Line</th>
-                <th style={{width:80}}>Priority</th>
-                <th style={{width:100}}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(showAllMutants
-                ? mutants.filter(m => !survivedOnly || m.status === 'SURVIVED')
-                : mutants.filter(m => !survivedOnly || m.status === 'SURVIVED').slice(0, 10)
-              ).map((m, i) => (
-                <tr key={m.mutant_hash || i}>
-                  <td style={{color:'var(--gray-400)',fontSize:12}}>{i+1}</td>
-                  <td><span className="badge badge-blue">{m.operator||'—'}</span></td>
-                  <td style={{fontSize:12,color:'var(--gray-600)',maxWidth:200,
-                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                    {m.file ? m.file.split('/').pop() : '—'}
-                  </td>
-                  <td style={{fontSize:12}}>{m.line||'—'}</td>
-                  <td>
-                    <div style={{display:'flex',alignItems:'center',gap:6}}>
-                      <div style={{flex:1,background:'var(--gray-200)',height:4,borderRadius:2}}>
-                        <div style={{width:`${Math.min(100,(m.priority_score||0)*10)}%`,
-                          height:'100%',background:'var(--purple-mid)',borderRadius:2}}/>
-                      </div>
-                      <span style={{fontSize:11,minWidth:28}}>{(m.priority_score||0).toFixed(1)}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <span style={{fontWeight:700,fontSize:12,
-                      color: m.status==='KILLED' ? 'var(--green)' :
-                             m.status==='SURVIVED' ? 'var(--red)' : 'var(--gray-500)'}}>
-                      {m.status==='KILLED' ? '● KILLED' :
-                       m.status==='SURVIVED' ? '● SURVIVED' : m.status||'—'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {mutants.length === 0 && (
-                <tr><td colSpan={6} style={{textAlign:'center',color:'var(--gray-400)',padding:20}}>
-                  No mutant records available
-                </td></tr>
-              )}
-            </tbody>
-          </table>
-          {mutants.filter(m => !survivedOnly || m.status==='SURVIVED').length > 10 && (
-            <div style={{marginTop:12,textAlign:'center'}}>
-              <button className="btn btn-secondary btn-sm"
-                onClick={()=>setShowAllMutants(s=>!s)}>
-                {showAllMutants
-                  ? '▲ Show Top 10 Only'
-                  : `▼ Show All ${mutants.filter(m=>!survivedOnly||m.status==='SURVIVED').length} Mutants`}
-              </button>
-            </div>
-          )}
-        </div>
-
         {/* FR109 — Prioritization factors (only for IMPT strategy) */}
         {primaryJob?.strategy === 'impt' && (
         <div className="card mb-4">
@@ -507,11 +423,11 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{cursor:'pointer'}} onClick={() => toggleSort('operator')}>Operator <SortIcon col="operator" /></th>
-                  <th style={{cursor:'pointer'}} onClick={() => toggleSort('total')}>Generated <SortIcon col="total" /></th>
+                  <th style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={() => toggleSort('operator')}>Operator <SortIcon col="operator" /></th>
+                  <th style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={() => toggleSort('total')}>Generated <SortIcon col="total" /></th>
                   <th>Killed</th>
                   <th>Survived</th>
-                  <th style={{cursor:'pointer'}} onClick={() => toggleSort('survival_rate')}>Survival Rate <SortIcon col="survival_rate" /></th>
+                  <th style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={() => toggleSort('survival_rate')}>Survival Rate <SortIcon col="survival_rate" /></th>
                 </tr>
               </thead>
               <tbody>
@@ -558,7 +474,7 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
           <div className="card mb-4">
             <div className="flex items-center justify-between mb-3">
               <div className="card-title" style={{marginBottom:0}}>
-                🦠 Mutant Details ({filteredMutants.length} of {mutants.length})
+                🎯 Prioritized Mutants ({filteredMutants.length} of {mutants.length})
               </div>
               <div className="flex gap-2">
                 <select className="form-select" style={{height:32,fontSize:12,width:130}}
@@ -576,16 +492,21 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
                 </select>
               </div>
             </div>
+            <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:12}}>
+              Sorted by IMPT priority score (highest first). Click a row to see the original vs. mutated code. &nbsp;
+              <span style={{color:'var(--green)',fontWeight:600}}>● Killed</span> = test detected the bug &nbsp;
+              <span style={{color:'var(--red)',fontWeight:600}}>● Survived</span> = test gap — needs attention
+            </div>
             <table className="data-table">
               <thead>
                 <tr>
                   <th></th>
-                  <th style={{cursor:'pointer'}} onClick={() => toggleSort('operator')}>Operator<SortIcon col="operator" /></th>
-                  <th style={{cursor:'pointer'}} onClick={() => toggleSort('file')}>File<SortIcon col="file" /></th>
-                  <th style={{cursor:'pointer'}} onClick={() => toggleSort('line')}>Line<SortIcon col="line" /></th>
-                  <th style={{cursor:'pointer'}} onClick={() => toggleSort('status')}>Status<SortIcon col="status" /></th>
-                  <th style={{cursor:'pointer'}} onClick={() => toggleSort('priority_score')}>Priority<SortIcon col="priority_score" /></th>
-                  <th>Killing Test</th>
+                  <th style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={() => toggleSort('operator')}>Operator<SortIcon col="operator" /></th>
+                  <th style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={() => toggleSort('file')}>File<SortIcon col="file" /></th>
+                  <th style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={() => toggleSort('line')}>Line<SortIcon col="line" /></th>
+                  <th style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={() => toggleSort('status')}>Status<SortIcon col="status" /></th>
+                  <th style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={() => toggleSort('priority_score')}>Priority<SortIcon col="priority_score" /></th>
+                  <th style={{whiteSpace:'nowrap'}}>Killing Test</th>
                 </tr>
               </thead>
               <tbody>
@@ -603,7 +524,15 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
                           color:m.status==='KILLED'?'var(--green)':m.status==='SURVIVED'?'var(--red)':'var(--gray-500)',
                         }}>{m.status}</span>
                       </td>
-                      <td>{m.priority_score?.toFixed(2)}</td>
+                      <td>
+                        <div style={{display:'flex',alignItems:'center',gap:6,minWidth:90}}>
+                          <div style={{flex:1,background:'var(--gray-200)',height:4,borderRadius:2}}>
+                            <div style={{width:`${Math.min(100,(m.priority_score||0)*10)}%`,
+                              height:'100%',background:'var(--purple-mid)',borderRadius:2}}/>
+                          </div>
+                          <span style={{fontSize:11,minWidth:28}}>{(m.priority_score||0).toFixed(1)}</span>
+                        </div>
+                      </td>
                       <td style={{fontSize:12,color:'var(--gray-500)'}}>{m.killing_test || '—'}</td>
                     </tr>
                     {/* FR112 — Source code diff for survived mutants */}
