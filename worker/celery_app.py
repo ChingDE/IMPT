@@ -31,6 +31,13 @@ try:
         worker_prefetch_multiplier=1,
         broker_connection_retry_on_startup=True,
         result_expires=86400,
+        # A mutation job (especially exhaustive) can run for hours. The Redis
+        # broker's default visibility_timeout is 3600s, so any task longer than
+        # an hour gets *redelivered* and — with acks_late — re-run, producing an
+        # infinite loop that monopolises the worker. Raise it well past the
+        # longest possible job so long tasks are never redelivered mid-run.
+        broker_transport_options={"visibility_timeout": 86400},
+        result_backend_transport_options={"visibility_timeout": 86400},
     )
     if _is_tls(s.CELERY_BROKER_URL):
         celery_app.conf.update(

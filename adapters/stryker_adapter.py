@@ -764,7 +764,7 @@ class StrykerAdapter:
                 pass
 
 
-    def _run_stryker_docker(self, extra_flags="", timeout=3600, progress_cb=None):
+    def _run_stryker_docker(self, extra_flags="", timeout=None, progress_cb=None):
         """Run Stryker without network, without root (so ava/jest work).
 
         When progress_cb is None this uses the proven blocking subprocess.run
@@ -773,6 +773,18 @@ class StrykerAdapter:
         streamed value drives only the UI bar — the authoritative results still
         come from the JSON report parsed afterwards.
         """
+        # Scale the timeout with the job's time budget instead of a flat cap.
+        # A filtered run on a slow project (or a full/exhaustive run) routinely
+        # needs more than an hour; a hard 3600s cap silently killed those runs
+        # and saved them as 0% results. Mirror the PIT adapter: floor 2h, scale
+        # by budget, cap 24h; env-overridable.
+        if timeout is None:
+            import os as _os
+            timeout = int(_os.environ.get(
+                "IMPT_STRYKER_TIMEOUT_SECONDS",
+                max(7200, min(86400, (self.time_budget_seconds or 0) + 1800)),
+            ))
+            log.info("Stryker timeout set to %ds (%.1f hours)", timeout, timeout / 3600)
         flags = ("npx stryker run " + extra_flags + " --fileLogLevel off 2>&1").strip()
         log.info("Running Stryker: %s", flags)
         cmd = self._docker_base(network="none") + ["sh", "-c", flags]
