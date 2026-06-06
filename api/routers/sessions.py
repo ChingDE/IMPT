@@ -564,6 +564,64 @@ async def start_testing(
     return {"session_id": session_id, "jobs": job_ids}
 
 
+@router.post("/{session_id}/stop", response_model=MessageOut)
+async def stop_testing(
+    session_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stop a running session: cancel its in-flight jobs and mark it stopped.
+
+    Cancellation is cooperative — the worker checks between phases, so a job
+    already inside a long test-execution subprocess finishes that step before
+    aborting. We also best-effort revoke the Celery task to stop it sooner. The
+    worker's completion write is guarded against the CANCELLED status, so a job
+    that finishes the current step regardless never overwrites the stopped state.
+    """
+    from db.repositories.repositories import JobRepository
+    repo       = TestSessionRepository(db)
+    audit_repo = AuditLogRepository(db)
+    job_repo   = JobRepository(db)
+    session    = await repo.get_by_id(session_id)
+
+    if not session or session.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    jobs   = await job_repo.get_session_jobs(session_id)
+    active = [j for j in jobs if (j.status or "").upper() in ("PENDING", "RUNNING")]
+
+    # Best-effort: revoke Celery tasks so the workers stop sooner.
+    try:
+        from worker.celery_app import celery_app, CELERY_AVAILABLE
+        if CELERY_AVAILABLE and celery_app:
+            for j in active:
+                if j.celery_task_id and j.celery_task_id != "sync":
+                    try:
+                        celery_app.control.revoke(j.celery_task_id, terminate=True,
+                                                  signal="SIGTERM")
+                    except Exception as exc:
+                        log.warning("Revoke failed for task %s: %s", j.celery_task_id, exc)
+    except Exception as exc:
+        log.warning("Celery revoke unavailable: %s", exc)
+
+    now = datetime.utcnow()
+    for j in active:
+        j.status        = "CANCELLED"
+        j.error_message = "Stopped by user"
+        j.completed_at  = now
+        db.add(j)
+    await repo.update(session, status="stopped", completed_at=now)
+    await audit_repo.log(
+        category="TESTING", action="session_stopped",
+        message=f"Testing stopped by user: {session.name} | jobs cancelled={len(active)}",
+        user_id=current_user.id, ip_address=_ip(request),
+    )
+    await db.commit()
+
+    return {"message": "Testing stopped."}
+
+
 # ── Shareable link ─────────────────────────────────────────────────────────────
 
 @router.post("/{session_id}/share", response_model=dict)

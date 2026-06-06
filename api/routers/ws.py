@@ -43,6 +43,7 @@ async def _get_jobs_snapshot(session_id: str) -> list[dict]:
                 "strategy":               j.strategy,
                 "status":                 j.status,
                 "total_mutants":          j.total_mutants or 0,
+                "selected_mutants":       j.selected_mutants or 0,
                 "executed_mutants":       j.executed_mutants or 0,
                 "killed_mutants":         j.killed_mutants or 0,
                 "mutation_score":         j.mutation_score or 0,

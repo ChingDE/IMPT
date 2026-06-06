@@ -562,6 +562,59 @@ class PITAdapter:
             else:
                 log.warning("Could not repair mutations.xml: %s", report)
 
+    def _source_line(self, source_file: str, class_name: Optional[str], line_no: int) -> str:
+        """Best-effort lookup of the original source line for a mutant, so the
+        report can show real code rather than only PIT's textual description.
+
+        PIT's XML gives a filename, line number and a human description but no
+        original token, so this resolves the file (preferring the package path
+        from the fully-qualified class name) and reads the line. Fully guarded:
+        any failure returns '' and the caller falls back to the description, and
+        results/counts are never affected.
+        """
+        if not line_no or line_no < 1:
+            return ""
+        try:
+            line_cache = getattr(self, "_src_line_cache", None)
+            if line_cache is None:
+                line_cache = self._src_line_cache = {}
+            path_cache = getattr(self, "_src_path_cache", None)
+            if path_cache is None:
+                path_cache = self._src_path_cache = {}
+
+            key   = class_name or source_file
+            fpath = path_cache.get(key)
+            if fpath is None:
+                fpath = ""
+                if class_name:
+                    rel  = class_name.split("$")[0].replace(".", "/") + ".java"
+                    base = rel.split("/")[-1]
+                    cand = self.project_dir / "src" / "main" / "java" / rel
+                    if cand.exists():
+                        fpath = str(cand)
+                    else:
+                        for p in self.project_dir.rglob(base):
+                            if str(p).replace("\\", "/").endswith("/" + rel):
+                                fpath = str(p)
+                                break
+                if not fpath and source_file:
+                    matches = list(self.project_dir.rglob(source_file))
+                    if matches:
+                        fpath = str(matches[0])
+                path_cache[key] = fpath
+            if not fpath:
+                return ""
+            lines = line_cache.get(fpath)
+            if lines is None:
+                with open(fpath, "r", encoding="utf-8", errors="replace") as fh:
+                    lines = fh.read().splitlines()
+                line_cache[fpath] = lines
+            if 1 <= line_no <= len(lines):
+                return lines[line_no - 1].strip()[:300]
+            return ""
+        except Exception:
+            return ""
+
     def _parse_results(self) -> List[Mutant]:
         report = self._find_report()
         if not report:
@@ -587,8 +640,13 @@ class PITAdapter:
                     method_name=m_elem.findtext("mutatedMethod"),
                     class_name=m_elem.findtext("mutatedClass"),
                 )
-                original = m_elem.findtext("description", "original")
-                mutated  = f"[{mutator_class}] {original}"
+                desc          = m_elem.findtext("description", "original")
+                original_line = self._source_line(loc.file, loc.class_name, loc.line)
+                # When the real source line is available, show it as the original
+                # code and PIT's description as the change applied. Otherwise fall
+                # back to the prior description-only representation.
+                original = original_line or desc
+                mutated  = desc if original_line else f"[{mutator_class}] {desc}"
 
                 # Stage 4 coverage proxy: use killingTest + mutatedMethod
                 # PIT doesn't expose full coverage sets, but killingTest +

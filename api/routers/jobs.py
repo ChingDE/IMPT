@@ -78,11 +78,12 @@ async def export_csv(
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Mutant ID","Operator","File","Line","Status","Priority Score","Execution Time (s)","Killing Test"])
+    writer.writerow(["Mutant ID","Operator","File","Line","Status","Priority Score","Execution Time (s)","Killing Test","Original Code","Mutated Code","Explanation"])
     for r in records:
         writer.writerow([r.mutant_hash, r.operator, r.file, r.line,
                          r.status, f"{r.priority_score:.2f}", f"{r.execution_time:.2f}",
-                         r.killing_test or ""])
+                         r.killing_test or "", r.original_code or "", r.mutated_code or "",
+                         r.explanation or ""])
     buf.seek(0)
 
     return StreamingResponse(

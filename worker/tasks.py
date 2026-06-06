@@ -43,6 +43,47 @@ def _publish_progress(session_id: str, job_id: str, executed: int,
         pass  # Redis publish is best-effort — never block mutation testing
 
 
+def _publish_bar(session_id: str, job_id: str, pct: int) -> None:
+    """Publish a progress-bar-only update (live Stryker percentage). Drives the
+    UI bar without touching numeric stats, which stay authoritative."""
+    try:
+        import redis as _redis
+        from config.settings import get_settings
+        r = _redis.from_url(get_settings().REDIS_URL, decode_responses=True,
+                            socket_connect_timeout=2)
+        r.publish(f"impt:session:{session_id}", __import__('json').dumps({
+            "type": "bar", "job_id": job_id, "pct": int(pct),
+        }))
+        r.close()
+    except Exception:
+        pass
+
+
+class _JobCancelled(Exception):
+    """Raised to abort a job the user has stopped, without marking it FAILED."""
+
+
+def _is_cancelled(job_id: str) -> bool:
+    """Best-effort check for a user-requested stop. Returns False on any error
+    so a transient DB hiccup never aborts a healthy run."""
+    try:
+        from config.settings import get_settings
+        import sqlalchemy as sa
+        settings = get_settings()
+        sync_url = settings.DATABASE_URL_SYNC or settings.DATABASE_URL.replace(
+            'postgresql+asyncpg', 'postgresql+psycopg2'
+        ).replace('sqlite+aiosqlite', 'sqlite').replace('?ssl=require', '?sslmode=require')
+        engine = sa.create_engine(sync_url, pool_pre_ping=True,
+                                  connect_args={"connect_timeout": 5} if 'postgresql' in sync_url else {})
+        with engine.connect() as conn:
+            row = conn.execute(sa.text("SELECT status FROM mutation_jobs WHERE id=:jid"),
+                               {"jid": job_id}).fetchone()
+        engine.dispose()
+        return bool(row) and str(row[0]).upper() == "CANCELLED"
+    except Exception:
+        return False
+
+
 def _write_progress_sync(job_id: str, executed: int, killed: int,
                           total: int, selected: int) -> None:
     """Write progress directly using a synchronous DB connection."""
@@ -124,7 +165,7 @@ def _mark_completed_sync(job_id: str, result: dict, records: list) -> None:
                     ci_lower=:cil, ci_upper=:ciu,
                     time_saved_pct=:tsp, subsumption_reduction_pct=:srp,
                     execution_time_seconds=:ets, result_json=:rj
-                WHERE id=:jid
+                WHERE id=:jid AND status != 'CANCELLED'
             """), {
                 "now": datetime.utcnow(),
                 "total":    result.get("total_mutants", 0),
@@ -141,17 +182,22 @@ def _mark_completed_sync(job_id: str, result: dict, records: list) -> None:
                 "rj":       json.dumps(result.get("result_json", {})),
                 "jid":      job_id,
             })
-            # Also update session status
+            # Mark the session ready as soon as the PRIMARY strategies finish.
+            # The exhaustive baseline (if any) keeps running in the background and
+            # enriches the results with the ground-truth correlation when done —
+            # the user no longer waits on it to use their results. A session that
+            # only has an exhaustive job completes when that job finishes.
             conn.execute(sa.text("""
                 UPDATE test_sessions SET status='completed', completed_at=:now
                 WHERE id = (SELECT session_id FROM mutation_jobs WHERE id=:jid)
+                AND status NOT IN ('completed','failed','stopped')
                 AND NOT EXISTS (
                     SELECT 1 FROM mutation_jobs
                     WHERE session_id = (SELECT session_id FROM mutation_jobs WHERE id=:jid2)
-                    AND status NOT IN ('COMPLETED','FAILED')
-                    AND id != :jid3
+                    AND strategy != 'exhaustive'
+                    AND status NOT IN ('COMPLETED','FAILED','CANCELLED')
                 )
-            """), {"now": datetime.utcnow(), "jid": job_id, "jid2": job_id, "jid3": job_id})
+            """), {"now": datetime.utcnow(), "jid": job_id, "jid2": job_id})
 
             # Save mutant records
             import uuid
@@ -245,6 +291,9 @@ def _run_engine(job_id: str, config: dict) -> dict:
     _wall_start = _time.time()
     _session_id = config.get("session_id", "")
     _strategy   = config.get("strategy", "impt")
+
+    if _is_cancelled(job_id):
+        raise _JobCancelled(job_id)
 
     language  = config.get("language", "java").lower()
     fw        = MutationFramework.PIT if language == "java" else MutationFramework.STRYKER
@@ -340,6 +389,8 @@ def _run_engine(job_id: str, config: dict) -> dict:
         selected = interleaved
 
     # ── Phase 3: Execute selected mutants ────────────────────────────────────
+    if _is_cancelled(job_id):
+        raise _JobCancelled(job_id)
     exec_count  = [0]
     kill_count  = [0]
     phase3_start = time.time()
@@ -353,7 +404,8 @@ def _run_engine(job_id: str, config: dict) -> dict:
         # Time taken ≈ (selected/total) × exhaustive_time ≈ budget
         log.info("Phase 3: Filtered Stryker run on %d/%d mutants",
                  len(selected), len(all_mutants))
-        _run_selected_mutants(selected, upload_path, config)
+        _run_selected_mutants(selected, upload_path, config,
+                              progress_cb=lambda pct: _publish_bar(_session_id, job_id, pct))
         for m in selected:
             if m.status != ExecutionStatus.PENDING:
                 exec_count[0] += 1
@@ -383,6 +435,8 @@ def _run_engine(job_id: str, config: dict) -> dict:
             if exec_count[0] % 3 == 0 or exec_count[0] == 1:
                 _write_progress_sync(job_id, exec_count[0], kill_count[0],
                                       len(all_mutants), len(selected))
+                _publish_progress(_session_id, job_id, exec_count[0], kill_count[0],
+                                  len(all_mutants), len(selected), _strategy)
 
         for m in selected:
             runner(m)
@@ -521,7 +575,7 @@ def _get_all_mutants(config: dict, job_id: str):
     return _synthetic_population(config.get("loc", 5000), seed=hash(job_id)), None, 5000, 100
 
 
-def _run_selected_mutants(selected, upload_path: str, config: dict) -> None:
+def _run_selected_mutants(selected, upload_path: str, config: dict, progress_cb=None) -> None:
     """
     Phase 3: Re-run Stryker/PIT on ONLY the selected mutants.
     This is what achieves real time savings.
@@ -541,7 +595,8 @@ def _run_selected_mutants(selected, upload_path: str, config: dict) -> None:
         else:
             log.info("Phase 3: Running Stryker on %d selected mutants", len(selected))
             adapter  = StrykerAdapter(p, use_docker=True, selected_mutants=selected,
-                                         user_id=config.get("user_id"))
+                                         user_id=config.get("user_id"),
+                                         progress_cb=progress_cb)
             executed = adapter.run()
             # Map results back by file+line+operator
             result_map = {}
@@ -632,6 +687,21 @@ def run_mutation_job_sync(job_id: str, config: dict) -> dict:
         if config.get("strategy") == "exhaustive" and config.get("foss_project_id"):
             _save_exhaustive_baseline(config["foss_project_id"], result)
         return {**result, "mutant_records": records}
+    except _JobCancelled:
+        log.info("Job %s cancelled by user — leaving status CANCELLED", job_id)
+        try:
+            import redis as _redis, json as _json
+            from config.settings import get_settings
+            r = _redis.from_url(get_settings().REDIS_URL, decode_responses=True,
+                                socket_connect_timeout=2)
+            r.publish(f"impt:session:{config.get('session_id','')}", _json.dumps({
+                "type": "job_complete", "job_id": job_id,
+                "strategy": config.get("strategy",""), "status": "CANCELLED",
+            }))
+            r.close()
+        except Exception:
+            pass
+        return {}
     except Exception as e:
         log.error("Job %s failed: %s", job_id, e)
         _mark_failed_sync(job_id, str(e))

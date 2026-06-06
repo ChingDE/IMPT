@@ -76,12 +76,16 @@ class StrykerAdapter:
                  sandbox_image: str = "impt-sandbox:latest",
                  time_budget_seconds: int = 0,
                  selected_mutants: Optional[List[Mutant]] = None,
-                 user_id: Optional[str] = None):
+                 user_id: Optional[str] = None,
+                 progress_cb=None):
         self.use_docker          = use_docker
         self.sandbox_image       = sandbox_image
         self.time_budget_seconds = time_budget_seconds
         self.selected_mutants    = selected_mutants
         self.user_id             = user_id
+        # Optional callback(pct:int) invoked with Stryker's live progress
+        # percentage during a filtered run. Best-effort, never affects results.
+        self.progress_cb         = progress_cb
 
         # If the project directory is read-only (e.g. FOSS projects mounted :ro),
         # copy it to a writable working directory so npm install and lock files work.
@@ -374,7 +378,8 @@ class StrykerAdapter:
                 if report.exists():
                     log.warning("Could not delete old report at %s — Phase 3 may use stale data", report)
         self._run_stryker_docker(
-            extra_flags="--mutate " + mutate_arg
+            extra_flags="--mutate " + mutate_arg,
+            progress_cb=self.progress_cb,
         )
         return self._parse_results()
 
@@ -759,20 +764,78 @@ class StrykerAdapter:
                 pass
 
 
-    def _run_stryker_docker(self, extra_flags="", timeout=3600):
-        """Run Stryker without network, without root (so ava/jest work)."""
+    def _run_stryker_docker(self, extra_flags="", timeout=3600, progress_cb=None):
+        """Run Stryker without network, without root (so ava/jest work).
+
+        When progress_cb is None this uses the proven blocking subprocess.run
+        path (unchanged). When a callback is supplied (filtered Phase-3 run), it
+        streams Stryker's output and reports the live progress percentage. The
+        streamed value drives only the UI bar — the authoritative results still
+        come from the JSON report parsed afterwards.
+        """
         flags = ("npx stryker run " + extra_flags + " --fileLogLevel off 2>&1").strip()
         log.info("Running Stryker: %s", flags)
         cmd = self._docker_base(network="none") + ["sh", "-c", flags]
+
+        if progress_cb is None:
+            try:
+                result = subprocess.run(cmd, check=True, timeout=timeout,
+                                        capture_output=True, text=True)
+                log.info("Stryker completed")
+            except subprocess.CalledProcessError as e:
+                out = (e.stdout or "") + (e.stderr or "")
+                log.error("Stryker failed: %s", out[-1000:])
+                if not self._find_report():
+                    raise
+            return
+
+        # Streaming path — best-effort live progress; isolated to filtered runs.
+        import re as _re, threading as _th
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, bufsize=1)
+        killer = _th.Timer(timeout, proc.kill); killer.daemon = True; killer.start()
+        # Match the percentage inside Stryker's progress bar: "...] 42%"
+        pct_re = _re.compile(r"\]\s*(\d{1,3})\s*%")
+        tail, buf, last_pct = [], "", -1
         try:
-            result = subprocess.run(cmd, check=True, timeout=timeout,
-                                    capture_output=True, text=True)
-            log.info("Stryker completed")
-        except subprocess.CalledProcessError as e:
-            out = (e.stdout or "") + (e.stderr or "")
-            log.error("Stryker failed: %s", out[-1000:])
+            for chunk in iter(lambda: proc.stdout.read(128), ""):
+                buf += chunk
+                tail.append(chunk)
+                if len(tail) > 300:
+                    tail = tail[-300:]
+                matches = pct_re.findall(buf)
+                if matches:
+                    try:
+                        pct = min(99, max(0, int(matches[-1])))
+                        if pct != last_pct:
+                            last_pct = pct
+                            try:
+                                progress_cb(pct)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    buf = buf[-64:]
+                elif len(buf) > 4096:
+                    buf = buf[-256:]
+        except Exception as e:
+            log.warning("Stryker stream read error (non-fatal): %s", e)
+        finally:
+            killer.cancel()
+            try:
+                proc.wait(timeout=30)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        rc = proc.returncode
+        if rc not in (0, None):
+            log.error("Stryker failed (rc=%s): %s", rc, ("".join(tail))[-1000:])
             if not self._find_report():
-                raise
+                raise subprocess.CalledProcessError(rc, cmd)
+        else:
+            log.info("Stryker completed (streamed)")
 
     def _run_local(self):
         if not (self.project_dir / "node_modules").exists():
