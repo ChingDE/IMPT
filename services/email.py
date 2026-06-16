@@ -1,38 +1,33 @@
 """
 services/email.py
-Email service using Resend (3,000 emails/month free).
-Falls back to logging if RESEND_API_KEY is not configured (local dev).
+Email service using Gmail SMTP (smtp.gmail.com).
+Falls back to logging if SMTP credentials are not configured (local dev).
 
 Setup:
-  1. Sign up at resend.com
-  2. Add and verify your domain (impt.it.com)
-  3. Create an API key
-  4. Set RESEND_API_KEY and EMAIL_FROM in .env
+  1. Use a Gmail account (e.g. novasoft_impt@gmail.com)
+  2. Enable 2-Step Verification on that account
+  3. Create a 16-character App Password
+     (Google Account -> Security -> 2-Step Verification -> App passwords)
+  4. Set SMTP_USER, SMTP_PASSWORD, and EMAIL_FROM in .env
+
+Note: Gmail sends the message as the authenticated account, so EMAIL_FROM must be
+that Gmail address (a display name is fine: "IMPT <novasoft_impt@gmail.com>").
 """
 from __future__ import annotations
 
 import logging
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import parseaddr
 from typing import Optional
 
 log = logging.getLogger(__name__)
 
 
-def _get_resend():
-    try:
-        import resend
-        from config.settings import get_settings
-        s = get_settings()
-        if not s.RESEND_API_KEY:
-            return None
-        resend.api_key = s.RESEND_API_KEY
-        return resend
-    except ImportError:
-        log.warning("resend package not installed — emails will be logged only")
-        return None
-
-
 def _send(to: str, subject: str, html: str) -> bool:
-    """Send an email. Returns True if sent, False if logged only."""
+    """Send an email via Gmail SMTP. Returns True if sent, False if logged only."""
     from config.settings import get_settings
     s = get_settings()
 
@@ -46,18 +41,39 @@ def _send(to: str, subject: str, html: str) -> bool:
         )
         return False
 
-    resend = _get_resend()
-    if not resend:
+    if not (s.SMTP_USER and s.SMTP_PASSWORD):
+        log.warning("SMTP_USER / SMTP_PASSWORD not configured — email not sent")
         return False
 
+    # multipart/alternative (plain + HTML) improves deliverability.
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = s.EMAIL_FROM
+    msg["To"] = to
+    msg["Reply-To"] = s.EMAIL_FROM
+    msg.attach(MIMEText(
+        "This email contains an HTML message. "
+        "Please open it in an email client that supports HTML.",
+        "plain", "utf-8",
+    ))
+    msg.attach(MIMEText(html, "html", "utf-8"))
+
+    # Envelope sender must be the authenticated Gmail account.
+    envelope_from = parseaddr(s.EMAIL_FROM)[1] or s.SMTP_USER
+
     try:
-        params = {
-            "from": s.EMAIL_FROM,
-            "to": [to],
-            "subject": subject,
-            "html": html,
-        }
-        resend.Emails.send(params)
+        context = ssl.create_default_context()
+        if int(s.SMTP_PORT) == 465:
+            with smtplib.SMTP_SSL(s.SMTP_HOST, int(s.SMTP_PORT), timeout=20, context=context) as server:
+                server.login(s.SMTP_USER, s.SMTP_PASSWORD)
+                server.sendmail(envelope_from, [to], msg.as_string())
+        else:
+            with smtplib.SMTP(s.SMTP_HOST, int(s.SMTP_PORT), timeout=20) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+                server.login(s.SMTP_USER, s.SMTP_PASSWORD)
+                server.sendmail(envelope_from, [to], msg.as_string())
         log.info("Email sent to %s: %s", to, subject)
         return True
     except Exception as exc:

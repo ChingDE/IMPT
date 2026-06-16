@@ -39,10 +39,13 @@ class Settings:
         os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
     )
 
-    # ── Email — Resend ─────────────────────────────────────────────────
-    RESEND_API_KEY:     str  = os.getenv("RESEND_API_KEY", "")
-    EMAIL_FROM:         str  = os.getenv("EMAIL_FROM", "IMPT <noreply@impt.it.com>")
-    EMAIL_ENABLED:      bool = bool(os.getenv("RESEND_API_KEY", ""))
+    # ── Email — Gmail SMTP ─────────────────────────────────────────────
+    SMTP_HOST:          str  = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT:          int  = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER:          str  = os.getenv("SMTP_USER", "")          # e.g. novasoft_impt@gmail.com
+    SMTP_PASSWORD:      str  = os.getenv("SMTP_PASSWORD", "")       # 16-char Gmail App Password
+    EMAIL_FROM:         str  = os.getenv("EMAIL_FROM", "IMPT <novasoft_impt@gmail.com>")
+    EMAIL_ENABLED:      bool = bool(os.getenv("SMTP_USER", "") and os.getenv("SMTP_PASSWORD", ""))
     ADMIN_ALERT_EMAIL:  str  = os.getenv("ADMIN_ALERT_EMAIL", "")
 
     # ── Token expiry ───────────────────────────────────────────────────
