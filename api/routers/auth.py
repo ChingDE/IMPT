@@ -296,43 +296,47 @@ async def verify_email(
 
 @router.post("/resend-verification", response_model=MessageOut)
 async def resend_verification(
-    request: Request,
-    current_user: User = Depends(get_current_user),
+    payload: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """FR023: Resend verification email. Max 3 per hour."""
-    if current_user.is_verified:
-        raise HTTPException(status_code=400, detail="Email already verified.")
-
+    """FR023: Resend verification email (public, enumeration-safe). Max 3 per hour."""
+    user_repo   = UserRepository(db)
     verify_repo = EmailVerificationRepository(db)
 
+    # Same response whether or not the email exists / is already verified.
+    standard_response = MessageOut(
+        message="If an unverified account exists with this email, a new verification link has been sent."
+    )
+
+    user = await user_repo.get_by_email(payload.email)
+    if not user or user.is_verified:
+        return standard_response
+
     # Rate limit: max 3 resends per hour
-    latest = await verify_repo.get_latest_for_user(current_user.id)
+    latest = await verify_repo.get_latest_for_user(user.id)
     if latest:
         one_hour_ago = datetime.utcnow() - timedelta(hours=1)
         if latest.resend_count >= 3 and latest.last_resend_at and latest.last_resend_at > one_hour_ago:
             raise HTTPException(
                 status_code=429,
-                detail="Too many resend requests. Please wait before requesting another verification email."
+                detail="Too many requests. Please wait before requesting another verification email."
             )
 
-    # Invalidate old tokens and create new one
-    await verify_repo.invalidate_existing(current_user.id)
+    # Invalidate old tokens and issue a fresh one
+    await verify_repo.invalidate_existing(user.id)
     token = generate_secure_token()
     expires_at = datetime.utcnow() + timedelta(hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS)
-    new_token = await verify_repo.create(current_user.id, token, expires_at)
+    new_token = await verify_repo.create(user.id, token, expires_at)
 
-    # Update resend count
     new_token.resend_count = (latest.resend_count + 1) if latest else 1
     new_token.last_resend_at = datetime.utcnow()
     db.add(new_token)
-
     await db.commit()
 
     verify_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
-    send_verification_email(current_user.email, current_user.first_name, verify_url)
+    send_verification_email(user.email, user.first_name, verify_url)
 
-    return MessageOut(message="Verification email sent. Please check your inbox.")
+    return standard_response
 
 
 # ── Password recovery ──────────────────────────────────────────────────────────

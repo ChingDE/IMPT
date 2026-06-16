@@ -10,13 +10,19 @@ Setup:
      (Google Account -> Security -> 2-Step Verification -> App passwords)
   4. Set SMTP_USER, SMTP_PASSWORD, and EMAIL_FROM in .env
 
-Note: Gmail sends the message as the authenticated account, so EMAIL_FROM must be
-that Gmail address (a display name is fine: "IMPT <novasoft_impt@gmail.com>").
+Note: Gmail sends as the authenticated account, so EMAIL_FROM must be that Gmail
+address (a display name is fine: "IMPT <novasoft_impt@gmail.com>").
+
+This sender forces IPv4. Many hosts and Docker bridge networks have no IPv6
+route, so resolving smtp.gmail.com to an IPv6 (AAAA) address causes
+"[Errno 101] Network is unreachable". Restricting resolution to IPv4 avoids it
+while keeping the hostname intact for TLS certificate validation.
 """
 from __future__ import annotations
 
 import logging
 import smtplib
+import socket
 import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -27,7 +33,7 @@ log = logging.getLogger(__name__)
 
 
 def _send(to: str, subject: str, html: str) -> bool:
-    """Send an email via Gmail SMTP. Returns True if sent, False if logged only."""
+    """Send an email via Gmail SMTP (IPv4). Returns True if sent, False if logged only."""
     from config.settings import get_settings
     s = get_settings()
 
@@ -58,17 +64,25 @@ def _send(to: str, subject: str, html: str) -> bool:
     ))
     msg.attach(MIMEText(html, "html", "utf-8"))
 
-    # Envelope sender must be the authenticated Gmail account.
     envelope_from = parseaddr(s.EMAIL_FROM)[1] or s.SMTP_USER
+    host = s.SMTP_HOST
+    port = int(s.SMTP_PORT)
+    context = ssl.create_default_context()
 
+    # Force IPv4 for the duration of the send (see module docstring).
+    _orig_getaddrinfo = socket.getaddrinfo
+
+    def _ipv4_only(host_, port_, family=0, type=0, proto=0, flags=0):
+        return _orig_getaddrinfo(host_, port_, socket.AF_INET, type, proto, flags)
+
+    socket.getaddrinfo = _ipv4_only
     try:
-        context = ssl.create_default_context()
-        if int(s.SMTP_PORT) == 465:
-            with smtplib.SMTP_SSL(s.SMTP_HOST, int(s.SMTP_PORT), timeout=20, context=context) as server:
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, timeout=20, context=context) as server:
                 server.login(s.SMTP_USER, s.SMTP_PASSWORD)
                 server.sendmail(envelope_from, [to], msg.as_string())
         else:
-            with smtplib.SMTP(s.SMTP_HOST, int(s.SMTP_PORT), timeout=20) as server:
+            with smtplib.SMTP(host, port, timeout=20) as server:
                 server.ehlo()
                 server.starttls(context=context)
                 server.ehlo()
@@ -79,6 +93,8 @@ def _send(to: str, subject: str, html: str) -> bool:
     except Exception as exc:
         log.error("Failed to send email to %s: %s", to, exc)
         return False
+    finally:
+        socket.getaddrinfo = _orig_getaddrinfo
 
 
 # ── Email templates ────────────────────────────────────────────────────────────
