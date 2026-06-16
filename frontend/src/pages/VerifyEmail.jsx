@@ -1,21 +1,30 @@
-// src/pages/VerifyEmailSent.jsx  FR020, FR022-FR023
-import { useState } from 'react';
+// src/pages/VerifyEmail.jsx  FR020, FR022-FR023, FR025-FR028
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { resendVerification } from '../api/client';
 import { Alert, AuthAside } from '../components/UI';
 
+const emailInputStyle = {
+  width: '100%', padding: '10px 12px', marginBottom: 12,
+  border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, boxSizing: 'border-box',
+};
+
 export function VerifyEmailSent() {
   const nav = useNavigate();
   const { state } = useLocation();
-  const email = state?.email || 'your email address';
+  const email = state?.email;            // real address passed from Register
   const [sending, setSending] = useState(false);
   const [sent, setSent]       = useState(false);
   const [error, setError]     = useState('');
 
   const handleResend = async () => {
+    if (!email) {
+      setError('We could not find your email address. Please return to login and sign in, or register again.');
+      return;
+    }
     setSending(true); setError('');
     try {
-      await resendVerification();
+      await resendVerification(email);
       setSent(true);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to resend. Please try again.');
@@ -34,7 +43,7 @@ export function VerifyEmailSent() {
 
         <div style={{ background: 'var(--green-xlight)', border: '1px solid var(--green-light)', borderRadius: 8, padding: '16px', marginBottom: 20, fontSize: 13.5, color: 'var(--gray-700)', lineHeight: 1.65, textAlign: 'center' }}>
           Account created successfully! We've sent a verification email to{' '}
-          <strong>{email}</strong>. Please check your inbox and click the verification link to activate your account.
+          <strong>{email || 'your email address'}</strong>. Please check your inbox and click the verification link to activate your account.
           <div style={{ marginTop: 8, fontSize: 12, color: 'var(--gray-500)' }}>
             Verification is required to use mutation testing features.
           </div>
@@ -58,10 +67,13 @@ export function VerifyEmailSent() {
 // src/pages/VerifyEmail.jsx  FR025-FR028
 export function VerifyEmail() {
   const nav = useNavigate();
-  const [state, setState] = useState('loading');  // loading | success | expired | invalid
+  const [state, setState] = useState('loading');  // loading | success | expired | invalid | resent
   const [sending, setSending] = useState(false);
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
 
-  useState(() => {
+  // NOTE: this must be useEffect, not useState — it runs the verification once on mount.
+  useEffect(() => {
     const token = new URLSearchParams(window.location.search).get('token');
     if (!token) { setState('invalid'); return; }
     import('../api/client').then(({ verifyEmail }) => {
@@ -76,12 +88,14 @@ export function VerifyEmail() {
   }, []);
 
   const handleResend = async () => {
-    setSending(true);
+    if (!email) { setError('Please enter your email address.'); return; }
+    setSending(true); setError('');
     try {
-      const { resendVerification } = await import('../api/client');
-      await resendVerification();
+      await resendVerification(email);
       setState('resent');
-    } catch {}
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to resend. Please try again.');
+    }
     setSending(false);
   };
 
@@ -111,8 +125,16 @@ export function VerifyEmail() {
         {state === 'expired' && (
           <>
             <Alert type="warn">
-              This verification link has expired. Please request a new verification email.
+              This verification link has expired. Enter your email to request a new one.
             </Alert>
+            <input
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              style={emailInputStyle}
+            />
+            {error && <Alert type="error">{error}</Alert>}
             <button className="btn btn-primary btn-full" onClick={handleResend} disabled={sending}>
               {sending ? 'Sending…' : 'Resend Verification Email'}
             </button>
@@ -122,7 +144,7 @@ export function VerifyEmail() {
           </>
         )}
 
-        {(state === 'invalid') && (
+        {state === 'invalid' && (
           <>
             <Alert type="error">
               Invalid verification link. If you've already verified your account, please log in.

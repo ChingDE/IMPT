@@ -243,6 +243,7 @@ export function AppShell({ children }) {
 
 // ── Verify Banner ─────────────────────────────────────────────────
 function VerifyBanner() {
+  const { user } = useAuth();
   const [dismissed, setDismissed] = useState(false);
   const [sending, setSending]     = useState(false);
   const [sent, setSent]           = useState(false);
@@ -250,10 +251,11 @@ function VerifyBanner() {
   if (dismissed) return null;
 
   const handleResend = async () => {
+    if (!user?.email) return;
     setSending(true);
     try {
       const { resendVerification } = await import('../api/client');
-      await resendVerification();
+      await resendVerification(user.email);
       setSent(true);
     } catch {}
     setSending(false);

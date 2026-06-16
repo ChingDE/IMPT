@@ -38,7 +38,7 @@ export const adminLogin         = (p)     => client.post('/api/auth/admin-token'
 export const changeAdminCreds   = (p)     => client.post('/api/auth/change-admin-credentials', p).then(r => r.data);
 export const getMe              = ()      => client.get('/api/auth/me').then(r => r.data);
 export const verifyEmail        = (token) => client.get(`/api/auth/verify-email?token=${token}`).then(r => r.data);
-export const resendVerification = ()      => client.post('/api/auth/resend-verification').then(r => r.data);
+export const resendVerification = (email) => client.post('/api/auth/resend-verification', { email }).then(r => r.data);
 export const forgotPassword     = (email) => client.post('/api/auth/forgot-password', { email }).then(r => r.data);
 export const resetPassword      = (p)     => client.post('/api/auth/reset-password', p).then(r => r.data);
 
