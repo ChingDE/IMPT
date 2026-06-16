@@ -1,39 +1,60 @@
 """
 services/email.py
-Email service using Gmail SMTP (smtp.gmail.com).
-Falls back to logging if SMTP credentials are not configured (local dev).
+Email service using the Gmail API over HTTPS (port 443).
 
-Setup:
-  1. Use a Gmail account (e.g. novasoft_impt@gmail.com)
-  2. Enable 2-Step Verification on that account
-  3. Create a 16-character App Password
-     (Google Account -> Security -> 2-Step Verification -> App passwords)
-  4. Set SMTP_USER, SMTP_PASSWORD, and EMAIL_FROM in .env
+Why the Gmail API instead of SMTP: this host blocks outbound SMTP (25/465/587),
+so smtplib connections time out. The Gmail API sends over HTTPS/443 (open) and mail
+leaves through Google as the authenticated account, giving Gmail-grade deliverability.
 
-Note: Gmail sends as the authenticated account, so EMAIL_FROM must be that Gmail
-address (a display name is fine: "IMPT <novasoft_impt@gmail.com>").
+Auth: OAuth2 with a long-lived refresh token (no SMTP / App Password).
+Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, EMAIL_FROM in .env.
+One-time token setup: scripts/get_refresh_token.py (run locally, in a browser).
 
-This sender forces IPv4. Many hosts and Docker bridge networks have no IPv6
-route, so resolving smtp.gmail.com to an IPv6 (AAAA) address causes
-"[Errno 101] Network is unreachable". Restricting resolution to IPv4 avoids it
-while keeping the hostname intact for TLS certificate validation.
+No new dependencies: uses httpx (already in requirements).
 """
 from __future__ import annotations
 
+import base64
 import logging
-import smtplib
-import socket
-import ssl
+import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import parseaddr
 from typing import Optional
+
+import httpx
 
 log = logging.getLogger(__name__)
 
+_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_SEND_URL  = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+
+# Cache the short-lived access token across sends (Google access tokens last ~1h).
+_token_cache = {"access_token": None, "expires_at": 0.0}
+
+
+def _get_access_token(s) -> str:
+    now = time.time()
+    if _token_cache["access_token"] and now < _token_cache["expires_at"] - 60:
+        return _token_cache["access_token"]
+    resp = httpx.post(
+        _TOKEN_URL,
+        data={
+            "client_id":     s.GMAIL_CLIENT_ID,
+            "client_secret": s.GMAIL_CLIENT_SECRET,
+            "refresh_token": s.GMAIL_REFRESH_TOKEN,
+            "grant_type":    "refresh_token",
+        },
+        timeout=20,
+    )
+    resp.raise_for_status()
+    tok = resp.json()
+    _token_cache["access_token"] = tok["access_token"]
+    _token_cache["expires_at"]   = now + float(tok.get("expires_in", 3600))
+    return _token_cache["access_token"]
+
 
 def _send(to: str, subject: str, html: str) -> bool:
-    """Send an email via Gmail SMTP (IPv4). Returns True if sent, False if logged only."""
+    """Send an email via the Gmail API. Returns True if sent, False if logged only."""
     from config.settings import get_settings
     s = get_settings()
 
@@ -47,15 +68,10 @@ def _send(to: str, subject: str, html: str) -> bool:
         )
         return False
 
-    if not (s.SMTP_USER and s.SMTP_PASSWORD):
-        log.warning("SMTP_USER / SMTP_PASSWORD not configured — email not sent")
-        return False
-
-    # multipart/alternative (plain + HTML) improves deliverability.
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = s.EMAIL_FROM
-    msg["To"] = to
+    msg["Subject"]  = subject
+    msg["From"]     = s.EMAIL_FROM
+    msg["To"]       = to
     msg["Reply-To"] = s.EMAIL_FROM
     msg.attach(MIMEText(
         "This email contains an HTML message. "
@@ -64,37 +80,24 @@ def _send(to: str, subject: str, html: str) -> bool:
     ))
     msg.attach(MIMEText(html, "html", "utf-8"))
 
-    envelope_from = parseaddr(s.EMAIL_FROM)[1] or s.SMTP_USER
-    host = s.SMTP_HOST
-    port = int(s.SMTP_PORT)
-    context = ssl.create_default_context()
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
 
-    # Force IPv4 for the duration of the send (see module docstring).
-    _orig_getaddrinfo = socket.getaddrinfo
-
-    def _ipv4_only(host_, port_, family=0, type=0, proto=0, flags=0):
-        return _orig_getaddrinfo(host_, port_, socket.AF_INET, type, proto, flags)
-
-    socket.getaddrinfo = _ipv4_only
     try:
-        if port == 465:
-            with smtplib.SMTP_SSL(host, port, timeout=20, context=context) as server:
-                server.login(s.SMTP_USER, s.SMTP_PASSWORD)
-                server.sendmail(envelope_from, [to], msg.as_string())
-        else:
-            with smtplib.SMTP(host, port, timeout=20) as server:
-                server.ehlo()
-                server.starttls(context=context)
-                server.ehlo()
-                server.login(s.SMTP_USER, s.SMTP_PASSWORD)
-                server.sendmail(envelope_from, [to], msg.as_string())
+        token = _get_access_token(s)
+        resp = httpx.post(
+            _SEND_URL,
+            headers={"Authorization": f"Bearer {token}"},
+            json={"raw": raw},
+            timeout=20,
+        )
+        if resp.status_code >= 400:
+            log.error("Gmail API send failed (%s): %s", resp.status_code, resp.text[:300])
+            return False
         log.info("Email sent to %s: %s", to, subject)
         return True
     except Exception as exc:
         log.error("Failed to send email to %s: %s", to, exc)
         return False
-    finally:
-        socket.getaddrinfo = _orig_getaddrinfo
 
 
 # ── Email templates ────────────────────────────────────────────────────────────

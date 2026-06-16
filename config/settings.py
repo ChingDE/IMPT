@@ -39,14 +39,17 @@ class Settings:
         os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
     )
 
-    # ── Email — Gmail SMTP ─────────────────────────────────────────────
-    SMTP_HOST:          str  = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    SMTP_PORT:          int  = int(os.getenv("SMTP_PORT", "587"))
-    SMTP_USER:          str  = os.getenv("SMTP_USER", "")          # e.g. novasoft_impt@gmail.com
-    SMTP_PASSWORD:      str  = os.getenv("SMTP_PASSWORD", "")       # 16-char Gmail App Password
-    EMAIL_FROM:         str  = os.getenv("EMAIL_FROM", "IMPT <novasoft_impt@gmail.com>")
-    EMAIL_ENABLED:      bool = bool(os.getenv("SMTP_USER", "") and os.getenv("SMTP_PASSWORD", ""))
-    ADMIN_ALERT_EMAIL:  str  = os.getenv("ADMIN_ALERT_EMAIL", "")
+    # ── Email — Gmail API (HTTPS / OAuth2) ─────────────────
+    GMAIL_CLIENT_ID:     str  = os.getenv("GMAIL_CLIENT_ID", "")
+    GMAIL_CLIENT_SECRET: str  = os.getenv("GMAIL_CLIENT_SECRET", "")
+    GMAIL_REFRESH_TOKEN: str  = os.getenv("GMAIL_REFRESH_TOKEN", "")
+    EMAIL_FROM:          str  = os.getenv("EMAIL_FROM", "IMPT <novasoft.impt@gmail.com>")
+    EMAIL_ENABLED:       bool = bool(
+        os.getenv("GMAIL_CLIENT_ID", "")
+        and os.getenv("GMAIL_CLIENT_SECRET", "")
+        and os.getenv("GMAIL_REFRESH_TOKEN", "")
+    )
+    ADMIN_ALERT_EMAIL:   str  = os.getenv("ADMIN_ALERT_EMAIL", "")
 
     # ── Token expiry ───────────────────────────────────────────────────
     EMAIL_VERIFICATION_EXPIRE_HOURS: int = int(
