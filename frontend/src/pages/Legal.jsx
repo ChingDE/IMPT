@@ -34,9 +34,9 @@ const H = ({children}) => <h2 style={{fontSize:16,fontWeight:700,marginTop:28,ma
 const P = ({children}) => <p style={{fontSize:14,color:'var(--gray-600)',lineHeight:1.75,marginBottom:12}}>{children}</p>;
 const Li = ({children}) => <li style={{fontSize:14,color:'var(--gray-600)',lineHeight:1.75,marginBottom:4}}>{children}</li>;
 
-export function PrivacyPolicy() {
+export function PrivacyContent() {
   return (
-    <Wrap title="Privacy Policy">
+    <>
       <P>This Privacy Policy describes how IMPT (Intelligent Mutation Prioritization Tool), developed by NovaSoft at FEU Institute of Technology, collects, uses, and protects your personal information in accordance with the Republic Act No. 10173, also known as the Data Privacy Act of 2012 of the Philippines.</P>
 
       <H>1. Data We Collect</H>
@@ -95,13 +95,13 @@ export function PrivacyPolicy() {
 
       <H>10. Changes to This Policy</H>
       <P>We may update this Privacy Policy to reflect changes in the system or applicable law. Significant changes will be communicated via a notice on the login page. Continued use of IMPT after changes constitutes acceptance of the updated policy.</P>
-    </Wrap>
+    </>
   );
 }
 
-export function TermsOfService() {
+export function TermsContent() {
   return (
-    <Wrap title="Terms of Service">
+    <>
       <P>By registering for and using IMPT (Intelligent Mutation Prioritization Tool), you agree to the following terms and conditions. Please read them carefully. If you do not agree, do not use the system.</P>
 
       <H>1. Acceptance of Terms</H>
@@ -149,8 +149,16 @@ export function TermsOfService() {
 
       <H>11. Contact</H>
       <P>Questions about these Terms should be directed to the NovaSoft team at FEU Institute of Technology, Nicanor Reyes St., Sampaloc, Manila.</P>
-    </Wrap>
+    </>
   );
+}
+
+export function PrivacyPolicy() {
+  return <Wrap title="Privacy Policy"><PrivacyContent /></Wrap>;
+}
+
+export function TermsOfService() {
+  return <Wrap title="Terms of Service"><TermsContent /></Wrap>;
 }
 
 // NFR085 — Maintenance mode page
