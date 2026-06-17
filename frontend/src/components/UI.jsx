@@ -1,7 +1,8 @@
 // src/components/UI.jsx
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, createContext, useContext } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { PrivacyContent, TermsContent } from '../pages/Legal';
 import {
   Home, PlayCircle, BarChart2, Settings, Clock, Save, HelpCircle,
   TrendingUp, History, GitCompare,
@@ -18,7 +19,67 @@ export const LogoMark = ({ size = 36 }) => (
 
 // Left brand panel for the auth pages (split layout). The dashboard screenshot
 // is rendered greyed-out behind this content via the .auth-aside::before rule.
+// ── Legal pop-up (Terms / Privacy) — shared modal over the right panel ─────────
+const LegalCtx = createContext(null);
+export const useLegalModal = () => useContext(LegalCtx) || { openLegal: () => {}, closeLegal: () => {} };
+
+export function LegalModalProvider({ children }) {
+  const [legal, setLegal] = useState(null);   // 'terms' | 'privacy' | null
+  const openLegal  = (type) => setLegal(type);
+  const closeLegal = () => setLegal(null);
+
+  useEffect(() => {
+    if (!legal) return;
+    const onKey = (e) => { if (e.key === 'Escape') closeLegal(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [legal]);
+
+  return (
+    <LegalCtx.Provider value={{ openLegal, closeLegal }}>
+      {children}
+      {legal && (
+        <>
+          <style>{`
+            .legal-overlay{position:fixed;top:0;bottom:0;right:0;left:50%;
+              background:rgba(20,18,15,.45);display:flex;align-items:center;
+              justify-content:center;padding:28px;z-index:1000}
+            .legal-modal{background:#fff;border-radius:14px;width:100%;max-width:600px;
+              max-height:88vh;display:flex;flex-direction:column;overflow:hidden;
+              box-shadow:0 18px 50px rgba(0,0,0,.28)}
+            .legal-modal-head{display:flex;align-items:center;justify-content:space-between;
+              padding:18px 24px;border-bottom:1px solid var(--gray-200)}
+            .legal-modal-title{font-size:18px;font-weight:800;margin:0;color:var(--gray-900)}
+            .legal-modal-body{padding:20px 24px;overflow-y:auto}
+            .legal-modal-foot{padding:12px 24px;border-top:1px solid var(--gray-200);text-align:right}
+            .legal-close{background:none;border:none;font-size:24px;line-height:1;
+              cursor:pointer;color:var(--gray-500)}
+            @media (max-width:900px){ .legal-overlay{left:0} }
+          `}</style>
+          <div className="legal-overlay" role="dialog" aria-modal="true"
+            aria-label={legal === 'terms' ? 'Terms of Service' : 'Privacy Policy'}
+            onClick={closeLegal}>
+            <div className="legal-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="legal-modal-head">
+                <h2 className="legal-modal-title">{legal === 'terms' ? 'Terms of Service' : 'Privacy Policy'}</h2>
+                <button type="button" className="legal-close" aria-label="Close" onClick={closeLegal}>&times;</button>
+              </div>
+              <div className="legal-modal-body">
+                {legal === 'terms' ? <TermsContent /> : <PrivacyContent />}
+              </div>
+              <div className="legal-modal-foot">
+                <button type="button" className="btn btn-secondary btn-sm" onClick={closeLegal}>Close</button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </LegalCtx.Provider>
+  );
+}
+
 export function AuthAside() {
+  const { openLegal } = useLegalModal();
   return (
     <aside className="auth-aside">
       <div className="auth-aside-top">
@@ -38,8 +99,8 @@ export function AuthAside() {
       <div className="auth-aside-footer">
         <span>NovaSoft · FEU Institute of Technology · 2025–2026</span>
         <span className="auth-aside-links">
-          <Link to="/privacy">Privacy</Link>
-          <Link to="/terms">Terms</Link>
+          <a href="#" onClick={(e) => { e.preventDefault(); openLegal('privacy'); }}>Privacy</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); openLegal('terms'); }}>Terms</a>
         </span>
       </div>
     </aside>
@@ -243,7 +304,6 @@ export function AppShell({ children }) {
 
 // ── Verify Banner ─────────────────────────────────────────────────
 function VerifyBanner() {
-  const { user } = useAuth();
   const [dismissed, setDismissed] = useState(false);
   const [sending, setSending]     = useState(false);
   const [sent, setSent]           = useState(false);
@@ -251,11 +311,10 @@ function VerifyBanner() {
   if (dismissed) return null;
 
   const handleResend = async () => {
-    if (!user?.email) return;
     setSending(true);
     try {
       const { resendVerification } = await import('../api/client');
-      await resendVerification(user.email);
+      await resendVerification();
       setSent(true);
     } catch {}
     setSending(false);

@@ -1,6 +1,7 @@
 // src/App.jsx
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { LegalModalProvider } from './components/UI';
 
 // Auth pages
 import Login from './pages/Login';
@@ -73,6 +74,7 @@ function PublicRoute({ children }) {
 
 export default function App() {
   return (
+    <LegalModalProvider>
     <Routes>
       {/* Public auth routes */}
       <Route path="/login"               element={<PublicRoute><Login /></PublicRoute>} />
@@ -113,5 +115,6 @@ export default function App() {
       <Route path="/"    element={<Navigate to="/dashboard" replace />} />
       <Route path="*"    element={<Navigate to="/dashboard" replace />} />
     </Routes>
+    </LegalModalProvider>
   );
 }

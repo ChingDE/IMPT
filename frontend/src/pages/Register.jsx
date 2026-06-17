@@ -1,9 +1,8 @@
 // src/pages/Register.jsx  FR011–FR021
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PrivacyContent, TermsContent } from './Legal';
 import { register } from '../api/client';
-import { Alert, AuthAside } from '../components/UI';
+import { Alert, AuthAside, useLegalModal } from '../components/UI';
 import { CheckCircle } from 'lucide-react';
 
 // ── Password strength — defined OUTSIDE Register so it never remounts ─────────
@@ -42,6 +41,7 @@ function PasswordStrength({ password }) {
 
 export default function Register() {
   const nav = useNavigate();
+  const { openLegal } = useLegalModal();
   const [form, setFormState] = useState({
     first_name: '', last_name: '', email: '', organization: '',
     password: '', confirm: '', agree: false,
@@ -50,14 +50,6 @@ export default function Register() {
   const [errors, setErrors]       = useState({});
   const [globalError, setGlobalError] = useState('');
   const [loading, setLoading]     = useState(false);
-  const [legal, setLegal]         = useState(null);  // 'terms' | 'privacy' | null
-
-  useEffect(() => {
-    if (!legal) return;
-    const onKey = (e) => { if (e.key === 'Escape') setLegal(null); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [legal]);
 
   // Update field without touching error state during typing
   const handleChange = (key) => (e) => {
@@ -246,11 +238,11 @@ export default function Register() {
                 onChange={handleChange('agree')}
               />
               I agree to the{' '}
-              <span className="link" onClick={(e) => { e.preventDefault(); setLegal('terms'); }}>
+              <span className="link" onClick={(e) => { e.preventDefault(); openLegal('terms'); }}>
                 Terms of Service
               </span>
               {' '}and{' '}
-              <span className="link" onClick={(e) => { e.preventDefault(); setLegal('privacy'); }}>
+              <span className="link" onClick={(e) => { e.preventDefault(); openLegal('privacy'); }}>
                 Privacy Policy
               </span>
             </label>
@@ -272,37 +264,6 @@ export default function Register() {
           Already have an account?{' '}
           <span className="link" onClick={() => nav('/login')}>Sign In</span>
         </div>
-
-        {legal && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={legal === 'terms' ? 'Terms of Service' : 'Privacy Policy'}
-            onClick={() => setLegal(null)}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'grid', placeItems: 'center', padding: 16, zIndex: 1000 }}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 760, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.25)' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid var(--gray-200)' }}>
-                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: 'var(--gray-900)' }}>
-                  {legal === 'terms' ? 'Terms of Service' : 'Privacy Policy'}
-                </h2>
-                <button type="button" onClick={() => setLegal(null)} aria-label="Close"
-                  style={{ background: 'none', border: 'none', fontSize: 24, lineHeight: 1, cursor: 'pointer', color: 'var(--gray-500)' }}>
-                  ×
-                </button>
-              </div>
-              <div style={{ padding: '20px 24px', overflowY: 'auto' }}>
-                {legal === 'terms' ? <TermsContent /> : <PrivacyContent />}
-              </div>
-              <div style={{ padding: '12px 24px', borderTop: '1px solid var(--gray-200)', textAlign: 'right' }}>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setLegal(null)}>Close</button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
