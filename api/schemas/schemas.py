@@ -175,6 +175,7 @@ class SessionOut(BaseModel):
     file_count: Optional[int] = None
     loc: Optional[int] = None
     test_count: Optional[int] = None
+    test_coverage: Optional[float] = None
     detected_framework: Optional[str] = None
     selected_operators: Optional[str] = None
     time_budget_minutes: Optional[int] = None

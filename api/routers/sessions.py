@@ -305,7 +305,8 @@ async def upload_project(
         detected_framework = "Stryker"
 
     # Count files and LOC
-    file_count = sum(1 for _ in project_root.rglob("*") if _.is_file())
+    from services.metadata import count_source_files
+    file_count = count_source_files(project_root, language)
     loc = _count_loc(project_root, language)
     test_count = _count_tests(project_root, language)
 
@@ -327,6 +328,7 @@ async def upload_project(
         file_count=file_count,
         loc=loc,
         test_count=test_count,
+        test_coverage=None,  # cleared; measured live by the coverage task below
         detected_framework=detected_framework,
         estimated_mutant_count=est_mutants,
         recommended_budget_min=rec_min,
@@ -334,6 +336,14 @@ async def upload_project(
         status="uploaded",
     )
     await db.commit()
+
+    # Live test-coverage measurement (best-effort, off the mutation pipeline).
+    # Dispatched after commit so the upload response returns immediately; the
+    # task writes test_coverage onto the session when (if) it completes. The
+    # frontend polls getSession to surface the value, and shows "unavailable"
+    # if it stays None.
+    _dispatch_coverage_measurement(session.id, str(project_root), language)
+
     return updated
 
 
@@ -364,6 +374,36 @@ def _count_tests(root: Path, language: str) -> int:
         for f in root.rglob("*.spec.*"):
             count += 1
     return count
+
+
+def _dispatch_coverage_measurement(session_id: str, project_root: str, language: str) -> None:
+    """Best-effort: measure line coverage for an uploaded project off-band.
+
+    Mirrors the start-testing dispatch pattern (Celery with a thread fallback)
+    so it works whether or not a worker is reachable. Never raises — coverage is
+    a non-critical, nice-to-have metric and must never block or fail an upload.
+    """
+    try:
+        from worker.celery_app import CELERY_AVAILABLE
+        if CELERY_AVAILABLE:
+            from worker.tasks import measure_coverage
+            measure_coverage.apply_async(args=[session_id, project_root, language])
+            log.info("Coverage measurement dispatched (celery) for session %s", session_id)
+            return
+    except Exception as exc:
+        log.warning("Coverage celery dispatch failed (%s); using thread", exc)
+
+    try:
+        import threading
+        from worker.tasks import measure_coverage_sync
+        threading.Thread(
+            target=measure_coverage_sync,
+            args=(session_id, project_root, language),
+            daemon=True,
+        ).start()
+        log.info("Coverage measurement dispatched (thread) for session %s", session_id)
+    except Exception as exc:
+        log.warning("Coverage measurement could not be dispatched for %s: %s", session_id, exc)
 
 
 # ── Configure mutation operators ───────────────────────────────────────────────

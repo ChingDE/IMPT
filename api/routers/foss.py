@@ -31,6 +31,8 @@ def _project_out(p: FossProject) -> dict:
         "loc":          p.loc,
         "size_band":    p.size_band,
         "test_count":   p.test_count,
+        "file_count":     p.file_count,
+        "test_coverage":  p.test_coverage,
         "version":      p.version,
         "has_baseline": b is not None,
         "baseline_mutation_score":          b.mutation_score if b else None,

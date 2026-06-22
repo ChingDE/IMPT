@@ -789,6 +789,48 @@ def _save_exhaustive_baseline(foss_project_id: str, result: dict) -> None:
         log.error("Failed to save exhaustive baseline: %s", exc)
 
 
+# ── Live coverage measurement (uploaded projects) ─────────────────────────────
+
+def _set_session_coverage_sync(session_id: str, coverage) -> None:
+    """Write test_coverage (float % or None) onto a test_session row."""
+    try:
+        from config.settings import get_settings
+        import sqlalchemy as sa
+        settings = get_settings()
+        sync_url = settings.DATABASE_URL_SYNC or settings.DATABASE_URL.replace(
+            'postgresql+asyncpg', 'postgresql+psycopg2'
+        ).replace('sqlite+aiosqlite', 'sqlite').replace('?ssl=require', '?sslmode=require')
+        engine = sa.create_engine(sync_url, pool_pre_ping=True,
+                                   connect_args={"connect_timeout": 5} if 'postgresql' in sync_url else {})
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text("UPDATE test_sessions SET test_coverage=:cov WHERE id=:sid"),
+                {"cov": coverage, "sid": session_id},
+            )
+        engine.dispose()
+    except Exception as e:
+        log.warning("set_session_coverage failed: %s", e)
+
+
+def measure_coverage_sync(session_id: str, project_root: str, language: str) -> None:
+    """Measure line coverage for an uploaded project and store it on the session.
+
+    Best-effort: on any failure the session's test_coverage simply stays None
+    and the UI shows it as unavailable. Never raises.
+    """
+    try:
+        from services.metadata import measure_line_coverage
+        path = _resolve_upload_path(project_root)
+        cov = measure_line_coverage(path, language, timeout_s=420)
+        if cov is not None:
+            _set_session_coverage_sync(session_id, cov)
+            log.info("Coverage for session %s: %.1f%%", session_id, cov)
+        else:
+            log.info("Coverage for session %s: unavailable", session_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        log.warning("measure_coverage_sync failed for %s: %s", session_id, exc)
+
+
 # Celery task registration
 try:
     from worker.celery_app import celery_app, CELERY_AVAILABLE
@@ -798,8 +840,16 @@ try:
         def run_mutation_job(self, job_id: str, config: dict):
             """Celery task — runs in worker process with its own sync DB access."""
             return run_mutation_job_sync(job_id, config)
+
+        @celery_app.task(bind=True, name="worker.tasks.measure_coverage",
+                         max_retries=0, acks_late=True)
+        def measure_coverage(self, session_id: str, project_root: str, language: str):
+            """Celery task — best-effort line-coverage measurement for an upload."""
+            return measure_coverage_sync(session_id, project_root, language)
     else:
         run_mutation_job = None
+        measure_coverage = None
 except Exception as exc:
     log.warning("Celery task registration failed: %s", exc)
     run_mutation_job = None
+    measure_coverage = None

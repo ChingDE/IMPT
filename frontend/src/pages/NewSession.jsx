@@ -152,6 +152,7 @@ export function NewSessionUpload() {
   const [fossProjects, setFossProjects] = useState([]);
   const [fossFilter, setFossFilter] = useState('all');  // all | java | javascript
   const [fossSelected, setFossSelected] = useState(null);
+  const [covExhausted, setCovExhausted] = useState(false);  // gave up waiting for live coverage
 
   useEffect(() => {
     getSession(id).then(s => {
@@ -167,6 +168,31 @@ export function NewSessionUpload() {
     });
     listFossProjects().then(setFossProjects).catch(() => {});
   }, [id]);
+
+  // Live test-coverage is measured asynchronously after an own-project upload.
+  // Poll getSession until it arrives (or we give up after ~3 min). FOSS
+  // sessions are skipped — their coverage is pre-computed and already present.
+  useEffect(() => {
+    if (!session) return;
+    const isOwnUpload = session.upload_path && !session.foss_project_id;
+    if (!isOwnUpload || session.test_coverage != null) return;
+    let attempts = 0;
+    const max = 36;  // 36 × 5s ≈ 3 min
+    const iv = setInterval(async () => {
+      attempts += 1;
+      try {
+        const s = await getSession(id);
+        if (s.test_coverage != null || attempts >= max) {
+          setSession(s);
+          if (s.test_coverage == null) setCovExhausted(true);
+          clearInterval(iv);
+        }
+      } catch {
+        if (attempts >= max) { setCovExhausted(true); clearInterval(iv); }
+      }
+    }, 5000);
+    return () => clearInterval(iv);
+  }, [id, session?.upload_path, session?.foss_project_id, session?.test_coverage]);
 
   if (!session) return (
     <AppShell>
@@ -251,7 +277,12 @@ export function NewSessionUpload() {
                     </div>
                     <div style={{ fontSize:11,color:'var(--gray-500)',marginTop:3,lineHeight:1.5 }}>{p.description}</div>
                     <div style={{ display:'flex',gap:8,marginTop:6,flexWrap:'wrap' }}>
+                      <span style={{ fontSize:10,color:'var(--gray-500)' }}>📄 {p.language==='java'?'Java':'JavaScript'}</span>
                       <span style={{ fontSize:10,color:'var(--gray-500)' }}>📏 {p.loc.toLocaleString()} LOC</span>
+                      {p.file_count != null &&
+                        <span style={{ fontSize:10,color:'var(--gray-500)' }}>🗂 {p.file_count.toLocaleString()} files</span>}
+                      {p.test_coverage != null &&
+                        <span style={{ fontSize:10,color:'var(--gray-500)' }}>🧪 {p.test_coverage.toFixed(1)}% coverage</span>}
                       <span style={{ fontSize:10,color:'var(--gray-500)' }}>🏷 {p.size_band}</span>
                       {p.has_baseline
                         ? <span style={{ fontSize:10,color:'var(--green)',fontWeight:600 }}>✓ Baseline: {(p.baseline_mutation_score*100).toFixed(1)}%</span>
@@ -261,12 +292,32 @@ export function NewSessionUpload() {
                 ))}
               </div>
               {fossSelected && (
-                <div style={{ marginTop:12,padding:'10px 14px',background:'var(--green-xlight)',
+                <div style={{ marginTop:12,padding:'12px 14px',background:'var(--green-xlight)',
                   border:'1px solid var(--green-light)',borderRadius:8,fontSize:13 }}>
-                  Selected: <strong>{fossSelected.name}</strong> ({fossSelected.loc.toLocaleString()} LOC · {fossSelected.version}) ·{' '}
-                  {fossSelected.has_baseline
-                    ? <span style={{color:'var(--green)',fontWeight:600}}>Ground truth baseline available ({(fossSelected.baseline_mutation_score*100).toFixed(1)}% exhaustive score)</span>
-                    : <span style={{color:'var(--amber)'}}>No baseline yet — will use estimation</span>}
+                  <div style={{ marginBottom:10 }}>
+                    Selected: <strong>{fossSelected.name}</strong> (v{fossSelected.version}) ·{' '}
+                    {fossSelected.has_baseline
+                      ? <span style={{color:'var(--green)',fontWeight:600}}>Ground truth baseline available ({(fossSelected.baseline_mutation_score*100).toFixed(1)}% exhaustive score)</span>
+                      : <span style={{color:'var(--amber)'}}>No baseline yet — will use estimation</span>}
+                  </div>
+                  <div style={{ fontSize:11,fontWeight:700,color:'var(--gray-600)',textTransform:'uppercase',letterSpacing:.4,marginBottom:6 }}>
+                    Project Metadata
+                  </div>
+                  <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(90px,1fr))',gap:10 }}>
+                    {[
+                      ['Language',     fossSelected.language==='java'?'Java':'JavaScript'],
+                      ['Files',        fossSelected.file_count != null ? fossSelected.file_count.toLocaleString() : '—'],
+                      ['Lines of Code',fossSelected.loc.toLocaleString()],
+                      ['Test Files',   fossSelected.test_count != null ? fossSelected.test_count.toLocaleString() : '—'],
+                      ['Test Coverage',fossSelected.test_coverage != null ? `${fossSelected.test_coverage.toFixed(1)}%` : '—'],
+                      ['Size',         fossSelected.size_band],
+                    ].map(([l,v])=>(
+                      <div key={l}>
+                        <div style={{ fontSize:15,fontWeight:700,color:'var(--gray-800)' }}>{v}</div>
+                        <div style={{ fontSize:10,color:'var(--gray-500)' }}>{l}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               <div className="flex justify-between mt-4">
@@ -334,11 +385,20 @@ export function NewSessionUpload() {
           {/* Project details after upload */}
           {uploaded && session && (
             <div style={{ background:'var(--green-xlight)',border:'1px solid var(--green-light)',borderRadius:8,padding:'14px 16px',marginBottom:16 }}>
-              <div style={{ fontWeight:600,color:'var(--green)',marginBottom:8 }}>✓ Project Uploaded Successfully</div>
-              <div className="grid-3" style={{ gap:12 }}>
-                {[['Files',session.file_count||0],['Lines of Code',session?.loc?.toLocaleString()||0],['Test Files',session.test_count||0]].map(([l,v])=>(
+              <div style={{ fontWeight:600,color:'var(--green)',marginBottom:10 }}>✓ Project Uploaded Successfully</div>
+              <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(90px,1fr))',gap:12 }}>
+                {[
+                  ['Language',     (session.language==='java'?'Java':'JavaScript')],
+                  ['Files',        session.file_count != null ? session.file_count.toLocaleString() : 0],
+                  ['Lines of Code',session?.loc != null ? session.loc.toLocaleString() : 0],
+                  ['Test Files',   session.test_count != null ? session.test_count.toLocaleString() : 0],
+                  ['Test Coverage',
+                    session.test_coverage != null
+                      ? `${session.test_coverage.toFixed(1)}%`
+                      : (covExhausted ? '—' : 'Measuring…')],
+                ].map(([l,v])=>(
                   <div key={l} style={{ textAlign:'center' }}>
-                    <div style={{ fontSize:20,fontWeight:700,color:'var(--gray-800)' }}>{v}</div>
+                    <div style={{ fontSize:18,fontWeight:700,color:'var(--gray-800)' }}>{v}</div>
                     <div style={{ fontSize:11,color:'var(--gray-500)' }}>{l}</div>
                   </div>
                 ))}
@@ -346,6 +406,16 @@ export function NewSessionUpload() {
               <div style={{ marginTop:8,fontSize:12,color:'var(--gray-500)' }}>
                 Framework detected: <strong>{session?.detected_framework}</strong>
               </div>
+              {session.test_coverage == null && !covExhausted && (
+                <div style={{ marginTop:6,fontSize:11,color:'var(--gray-400)' }}>
+                  Test coverage is being measured in the background — you can continue without waiting.
+                </div>
+              )}
+              {session.test_coverage == null && covExhausted && (
+                <div style={{ marginTop:6,fontSize:11,color:'var(--gray-400)' }}>
+                  Test coverage could not be measured automatically for this project. This does not affect mutation testing.
+                </div>
+              )}
             </div>
           )}
 
