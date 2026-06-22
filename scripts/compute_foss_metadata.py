@@ -85,6 +85,15 @@ def main() -> int:
     from services.metadata import count_source_files, measure_line_coverage
     import sqlalchemy as sa
 
+    # Reuse the PIT adapter's per-project Maven/Gradle config so Java coverage
+    # builds with the same flags (submodule, enforcer.skip, compiler version, …).
+    try:
+        from adapters.pit_adapter import PITAdapter
+        PIT_CFG = dict(PITAdapter.FOSS_PROJECT_CONFIGS)
+    except Exception as exc:
+        log.warning("Could not load PIT project configs (%s); using plain mvn", exc)
+        PIT_CFG = {}
+
     foss_dir = Path(args.foss_dir)
     work_dir = Path(args.work_dir) if args.work_dir else None
     if work_dir:
@@ -115,8 +124,14 @@ def main() -> int:
         files = count_source_files(proj, r.language)
         coverage = None
         if not args.skip_coverage:
+            cfg = PIT_CFG.get(r.slug, {})
             log.info("[%s] measuring coverage (timeout %ss)…", r.slug, args.timeout)
-            coverage = measure_line_coverage(proj, r.language, timeout_s=args.timeout)
+            coverage = measure_line_coverage(
+                proj, r.language, timeout_s=args.timeout,
+                build=cfg.get("build"),
+                extra_maven_args=cfg.get("extra_maven_args"),
+                submodule=cfg.get("submodule"),
+            )
 
         with engine.begin() as conn:
             if args.skip_coverage:

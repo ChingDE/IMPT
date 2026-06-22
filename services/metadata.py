@@ -135,19 +135,43 @@ def _rel_workdir(root: Path, build_root: Path) -> str:
 
 # -- Coverage measurement (runs inside impt-sandbox) --------------------------
 
-def _coverage_java(root: Path, timeout_s: int):
+def _parse_jacoco(search_root: Path):
+    """Sum LINE counters across any jacoco.xml reports under search_root."""
+    covered = missed = 0
+    for xml in search_root.rglob("jacoco.xml"):
+        try:
+            tree = ET.parse(str(xml))
+            for counter in tree.getroot().iter("counter"):
+                if counter.get("type") == "LINE":
+                    covered += int(counter.get("covered", 0))
+                    missed += int(counter.get("missed", 0))
+                    break  # the first LINE counter is the report-level aggregate
+        except Exception as exc:
+            log.warning("coverage(java): parse %s failed: %s", xml, exc)
+    total = covered + missed
+    return round(covered / total * 100.0, 1) if total else None
+
+
+def _coverage_java(root: Path, timeout_s: int, extra_maven_args=None, submodule=None):
     build_root = _find_build_root(root, "pom.xml")
     if build_root is None:
         log.info("coverage(java): no pom.xml under %s", root)
         return None
     host_root = _host_path(str(root))
-    workdir = _rel_workdir(root, build_root)
     prep = "org.jacoco:jacoco-maven-plugin:%s:prepare-agent" % _JACOCO_VERSION
     report = "org.jacoco:jacoco-maven-plugin:%s:report" % _JACOCO_VERSION
-    cmd = _docker_cmd(host_root, workdir) + [
-        "mvn", "-q", "-B", "-Dmaven.test.failure.ignore=true",
-        prep, "test", report,
-    ]
+    mvn = ["mvn", "-q", "-B", "-Dmaven.test.failure.ignore=true"]
+    if submodule:
+        # Build the target submodule (and its deps) from the repo root.
+        workdir = "/project"
+        mvn += ["-pl", submodule, "-am"]
+        search_root = root
+    else:
+        workdir = _rel_workdir(root, build_root)
+        search_root = build_root
+    mvn += list(extra_maven_args or [])
+    mvn += [prep, "test", report]
+    cmd = _docker_cmd(host_root, workdir) + mvn
     try:
         subprocess.run(cmd, timeout=timeout_s, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, check=False)
@@ -157,17 +181,48 @@ def _coverage_java(root: Path, timeout_s: int):
     except Exception as exc:
         log.warning("coverage(java): docker run failed: %s", exc)
         return None
+    return _parse_jacoco(search_root)
+
+
+def _coverage_gradle(root: Path, timeout_s: int):
+    build_root = (_find_build_root(root, "build.gradle")
+                  or _find_build_root(root, "build.gradle.kts"))
+    if build_root is None:
+        log.info("coverage(gradle): no build.gradle under %s", root)
+        return None
+    host_root = _host_path(str(root))
+    workdir = _rel_workdir(root, build_root)
+    shell = (
+        "chmod +x ./gradlew 2>/dev/null; "
+        "./gradlew --no-daemon -x javadoc jacocoTestReport 2>/dev/null || "
+        "./gradlew --no-daemon -x javadoc test jacocoTestReport"
+    )
+    cmd = _docker_cmd(host_root, workdir) + ["bash", "-lc", shell]
+    try:
+        subprocess.run(cmd, timeout=timeout_s, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, check=False)
+    except subprocess.TimeoutExpired:
+        log.info("coverage(gradle): timed out after %ss", timeout_s)
+        return None
+    except Exception as exc:
+        log.warning("coverage(gradle): docker run failed: %s", exc)
+        return None
+    # Gradle's JaCoCo XML report has a <report> root, like Maven's.
     covered = missed = 0
-    for xml in build_root.rglob("jacoco.xml"):
+    for xml in build_root.rglob("*.xml"):
+        if "jacoco" not in str(xml).lower():
+            continue
         try:
-            tree = ET.parse(str(xml))
-            for counter in tree.getroot().iter("counter"):
+            r = ET.parse(str(xml)).getroot()
+            if r.tag != "report":
+                continue
+            for counter in r.iter("counter"):
                 if counter.get("type") == "LINE":
                     covered += int(counter.get("covered", 0))
                     missed += int(counter.get("missed", 0))
                     break
-        except Exception as exc:
-            log.warning("coverage(java): parse %s failed: %s", xml, exc)
+        except Exception:
+            pass
     total = covered + missed
     return round(covered / total * 100.0, 1) if total else None
 
@@ -207,12 +262,15 @@ def _coverage_js(root: Path, timeout_s: int):
         return None
 
 
-def measure_line_coverage(root, language: str, timeout_s: int = 900):
+def measure_line_coverage(root, language: str, timeout_s: int = 900,
+                          build=None, extra_maven_args=None, submodule=None):
     """Measure line coverage (%) for a project. Returns 0-100 or None.
 
-    Runs inside the impt-sandbox image. Best-effort and fully guarded: never
-    raises. None means "could not be measured" and callers should show it as
-    unavailable, not as 0%.
+    Runs inside the impt-sandbox image. `build`/`extra_maven_args`/`submodule`
+    come from the per-project FOSS config (see scripts/compute_foss_metadata.py)
+    so Java projects build with the same flags the PIT adapter uses. Best-effort
+    and fully guarded: never raises. None means "could not be measured" and
+    callers should show it as unavailable, not as 0%.
     """
     root = Path(root)
     if not root.exists():
@@ -220,7 +278,11 @@ def measure_line_coverage(root, language: str, timeout_s: int = 900):
     lang = (language or "").lower()
     try:
         if lang == "java":
-            return _coverage_java(root, timeout_s)
+            if (build or "").lower() == "gradle":
+                return _coverage_gradle(root, timeout_s)
+            return _coverage_java(root, timeout_s,
+                                  extra_maven_args=extra_maven_args,
+                                  submodule=submodule)
         if lang == "javascript":
             return _coverage_js(root, timeout_s)
         log.info("measure_line_coverage: unsupported language %r", language)
