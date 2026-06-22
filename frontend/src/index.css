@@ -116,9 +116,32 @@ input,select,textarea{font-family:var(--font)}
 .auth-sub{font-size:14px;color:var(--gray-500);margin-top:4px}
 .auth-tagline{font-size:14px;font-weight:600;color:var(--purple-mid);margin-top:4px}
 
+/* Larger text + controls on the right auth panel so it fills the column.
+   Scoped to .auth-card so the rest of the app's forms/buttons are unaffected.
+   Covers Login, Admin login, Register, and Forgot password (all use .auth-card). */
+.auth-card{padding:56px 56px}
+.auth-card > *{max-width:500px}
+.auth-card.wide > *{max-width:620px}
+.auth-card .auth-logo{margin-bottom:30px}
+.auth-card .auth-logo-icon{width:72px;height:72px;border-radius:18px;margin-bottom:14px}
+.auth-card .auth-brand{font-size:34px}
+.auth-card .auth-sub{font-size:16px;margin-top:6px}
+.auth-card .auth-tagline{font-size:15px;margin-top:6px}
+.auth-card .form-group{margin-bottom:20px}
+.auth-card .form-label{font-size:15px;margin-bottom:7px}
+.auth-card .form-input{font-size:16px;padding:13px 16px}
+.auth-card .btn-lg{padding:15px 24px;font-size:17px}
+.auth-card .alert{font-size:14.5px;padding:13px 16px}
+
 @media (max-width:900px){
   .auth-aside{display:none}
   .auth-card{flex:1 1 100%}
+}
+
+@media (max-width:560px){
+  .auth-card{padding:40px 24px}
+  .auth-card .auth-brand{font-size:30px}
+  .auth-card .form-input{font-size:16px;padding:12px 14px}
 }
 
 /* ── Forms ── */
