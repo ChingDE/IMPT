@@ -96,3 +96,11 @@ export const getFossProject    = (slug)    => client.get(`/api/foss/${slug}`).th
 export const getFossBaseline   = (slug)    => client.get(`/api/foss/${slug}/baseline`).then(r => r.data);
 
 export default client;
+
+// ── GitHub integration ────────────────────────────────────────────
+export const githubStatus       = ()            => client.get('/api/github/status').then(r => r.data);
+export const githubAuthorizeUrl = (sessionId)   => client.get('/api/github/authorize-url', { params: { return_session: sessionId } }).then(r => r.data);
+export const githubDisconnect   = ()            => client.delete('/api/github/disconnect').then(r => r.data);
+export const listGithubRepos    = (query='', page=1) => client.get('/api/github/repos', { params: { query, page } }).then(r => r.data);
+export const listGithubBranches = (owner, repo) => client.get(`/api/github/repos/${owner}/${repo}/branches`).then(r => r.data);
+export const importGithubRepo   = (sessionId, body) => client.post(`/api/github/import/${sessionId}`, body).then(r => r.data);

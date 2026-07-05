@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { createSession, getSession, uploadProject, configureOperators, setBudget, startTesting, listFossProjects, updateSession } from '../api/client';
+import { githubStatus, githubAuthorizeUrl, githubDisconnect, listGithubRepos, listGithubBranches, importGithubRepo } from '../api/client';
 import { AppShell, WizardHeader, Alert, InfoBox, TooltipIcon } from '../components/UI';
 
 // Operators supported by IMPT — grouped by framework support
@@ -153,6 +154,16 @@ export function NewSessionUpload() {
   const [fossFilter, setFossFilter] = useState('all');  // all | java | javascript
   const [fossSelected, setFossSelected] = useState(null);
   const [covExhausted, setCovExhausted] = useState(false);  // gave up waiting for live coverage
+  // GitHub import
+  const [ghStatus, setGhStatus]     = useState(null);   // {enabled, connected, login}
+  const [ghQuery, setGhQuery]       = useState('');
+  const [ghRepos, setGhRepos]       = useState([]);
+  const [ghRepo, setGhRepo]         = useState(null);
+  const [ghBranches, setGhBranches] = useState([]);
+  const [ghBranch, setGhBranch]     = useState('');
+  const [ghSubdir, setGhSubdir]     = useState('');
+  const [ghBusy, setGhBusy]         = useState(false);
+  const [ghError, setGhError]       = useState('');
 
   useEffect(() => {
     getSession(id).then(s => {
@@ -168,6 +179,58 @@ export function NewSessionUpload() {
     });
     listFossProjects().then(setFossProjects).catch(() => {});
   }, [id]);
+
+  // ── GitHub import handlers ──────────────────────────────────────
+  const ghLoadRepos = async (q='') => {
+    setGhBusy(true); setGhError('');
+    try { setGhRepos(await listGithubRepos(q)); }
+    catch { setGhError('Could not load repositories from GitHub.'); }
+    finally { setGhBusy(false); }
+  };
+  const ghConnect = async () => {
+    try { const { url } = await githubAuthorizeUrl(id); window.location.href = url; }
+    catch { setGhError('Could not start the GitHub connection.'); }
+  };
+  const ghPickRepo = async (r) => {
+    setGhRepo(r); setGhBranch(r.default_branch || ''); setGhBranches([]); setGhError('');
+    try {
+      const { branches } = await listGithubBranches(r.owner, r.name);
+      setGhBranches(branches.length ? branches : [r.default_branch].filter(Boolean));
+    } catch { setGhBranches([r.default_branch].filter(Boolean)); }
+  };
+  const ghDisconnectNow = async () => {
+    try { await githubDisconnect(); setGhStatus({ enabled:true, connected:false, login:null });
+          setGhRepos([]); setGhRepo(null); setGhBranches([]); }
+    catch { setGhError('Could not disconnect.'); }
+  };
+  const ghImport = async () => {
+    if (!ghRepo || !ghBranch) return;
+    setGhBusy(true); setGhError('');
+    try {
+      const updated = await importGithubRepo(id, {
+        owner: ghRepo.owner, repo: ghRepo.name, ref: ghBranch,
+        subdir: ghSubdir.trim() || null,
+      });
+      setSession(updated); setUploadDone(true);
+    } catch (e) {
+      setGhError(e?.response?.data?.detail || 'Import failed. Please check the repository and try again.');
+    } finally { setGhBusy(false); }
+  };
+
+  // Open the GitHub tab and surface result after the OAuth redirect returns.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('github') === 'connected') setTab('github');
+    if (q.get('github') === 'error') { setTab('github'); setGhError('GitHub connection failed. Please try again.'); }
+  }, []);
+
+  // Load connection status (and the user's repos) when the GitHub tab opens.
+  useEffect(() => {
+    if (tab !== 'github' || ghStatus !== null) return;
+    githubStatus()
+      .then(s => { setGhStatus(s); if (s.connected) ghLoadRepos(''); })
+      .catch(() => setGhStatus({ enabled:false, connected:false }));
+  }, [tab]);
 
   // Live test-coverage is measured asynchronously after an own-project upload.
   // Poll getSession until it arrives (or we give up after ~3 min). FOSS
@@ -240,7 +303,7 @@ export function NewSessionUpload() {
 
           {/* Tab switcher */}
           <div style={{ display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid var(--gray-200)' }}>
-            {[['upload','📁 Upload Your Own'],['foss','🔬 Use FOSS Project']].map(([t,l])=>(
+            {[['upload','📁 Upload Your Own'],['foss','🔬 Use FOSS Project'],['github','🐙 Import from GitHub']].map(([t,l])=>(
               <button key={t}
                 style={{ padding:'8px 18px',fontWeight:600,fontSize:13,border:'none',cursor:'pointer',
                   background:'transparent', color: tab===t?'var(--purple-mid)':'var(--gray-500)',
@@ -437,6 +500,120 @@ export function NewSessionUpload() {
             )}
           </div>
           </div>}  {/* end tab === 'upload' */}
+
+          {/* GitHub import panel */}
+          {tab === 'github' && (
+            <div>
+              {ghStatus === null && (
+                <p style={{ fontSize:13,color:'var(--gray-500)' }}>Checking GitHub connection…</p>
+              )}
+
+              {ghStatus && ghStatus.enabled === false && (
+                <InfoBox><strong>GitHub import isn’t configured.</strong> Please contact the research team, or use Upload / FOSS instead.</InfoBox>
+              )}
+
+              {ghStatus && ghStatus.enabled && !ghStatus.connected && (
+                <div style={{ textAlign:'center',padding:'24px 0' }}>
+                  <p style={{ fontSize:13,color:'var(--gray-500)',marginBottom:14 }}>
+                    Connect your GitHub account to import a repository directly — public or private. You only need to do this once.
+                  </p>
+                  {ghError && <div className="alert alert-error" style={{ marginBottom:12 }}>{ghError}</div>}
+                  <button className="btn btn-primary btn-lg" onClick={ghConnect}>🔗 Connect GitHub</button>
+                </div>
+              )}
+
+              {ghStatus && ghStatus.connected && !uploaded && (
+                <div>
+                  <p style={{ fontSize:13,color:'var(--gray-500)',marginBottom:10 }}>
+                    Connected as <strong>{ghStatus.login}</strong>. Choose a repository to import.
+                  </p>
+                  <div style={{ display:'flex',gap:8,marginBottom:12 }}>
+                    <input className="form-input" placeholder="Search your repositories…" value={ghQuery}
+                      onChange={e=>setGhQuery(e.target.value)}
+                      onKeyDown={e=>{ if(e.key==='Enter') ghLoadRepos(ghQuery); }} style={{ flex:1 }}/>
+                    <button className="btn btn-secondary" onClick={()=>ghLoadRepos(ghQuery)} disabled={ghBusy}>Search</button>
+                  </div>
+
+                  <div style={{ maxHeight:240,overflowY:'auto',border:'1px solid var(--gray-200)',borderRadius:8,marginBottom:12 }}>
+                    {ghRepos.length === 0 && (
+                      <div style={{ padding:12,fontSize:12,color:'var(--gray-400)' }}>
+                        {ghBusy ? 'Loading…' : 'No repositories to show. Try searching by name.'}
+                      </div>
+                    )}
+                    {ghRepos.map(r=>(
+                      <div key={r.full_name} onClick={()=>ghPickRepo(r)}
+                        style={{ padding:'8px 12px',cursor:'pointer',borderBottom:'1px solid var(--gray-100)',
+                          background: ghRepo?.full_name===r.full_name ? 'var(--purple-xlight)' : 'transparent' }}>
+                        <div style={{ fontSize:13,fontWeight:600,color:'var(--gray-800)' }}>
+                          {r.full_name} {r.private && <span style={{ fontSize:10,color:'var(--amber)' }}>🔒 private</span>}
+                        </div>
+                        <div style={{ fontSize:11,color:'var(--gray-500)' }}>
+                          {r.language || '—'}{r.updated_at ? ` · updated ${new Date(r.updated_at).toLocaleDateString()}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {ghRepo && (
+                    <div style={{ display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end',marginBottom:12 }}>
+                      <div>
+                        <label className="form-label">Branch</label>
+                        <select className="form-input" value={ghBranch} onChange={e=>setGhBranch(e.target.value)}>
+                          {(ghBranches.length ? ghBranches : [ghRepo.default_branch].filter(Boolean)).map(b=>(
+                            <option key={b} value={b}>{b}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ flex:1,minWidth:180 }}>
+                        <label className="form-label">Subfolder (optional, for monorepos)</label>
+                        <input className="form-input" placeholder="e.g. packages/core" value={ghSubdir}
+                          onChange={e=>setGhSubdir(e.target.value)}/>
+                      </div>
+                    </div>
+                  )}
+
+                  {ghError && <div className="alert alert-error" style={{ marginBottom:12 }}>{ghError}</div>}
+
+                  <div style={{ display:'flex',gap:8,alignItems:'center' }}>
+                    <button className="btn btn-outline-gray btn-sm" onClick={ghDisconnectNow} disabled={ghBusy}>Disconnect</button>
+                    <button className="btn btn-primary" onClick={ghImport} disabled={!ghRepo || !ghBranch || ghBusy} style={{ marginLeft:'auto' }}>
+                      {ghBusy ? 'Importing…' : 'Import & Analyze →'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {ghStatus && ghStatus.connected && uploaded && session && (
+                <div style={{ background:'var(--green-xlight)',border:'1px solid var(--green-light)',borderRadius:8,padding:'14px 16px' }}>
+                  <div style={{ fontWeight:600,color:'var(--green)',marginBottom:8 }}>✓ Repository Imported</div>
+                  <div style={{ fontSize:12,color:'var(--gray-600)',marginBottom:10,wordBreak:'break-all' }}>{session.upload_filename}</div>
+                  <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(90px,1fr))',gap:12 }}>
+                    {[
+                      ['Language',     session.language==='java'?'Java':'JavaScript'],
+                      ['Files',        session.file_count != null ? session.file_count.toLocaleString() : 0],
+                      ['Lines of Code',session?.loc != null ? session.loc.toLocaleString() : 0],
+                      ['Test Files',   session.test_count != null ? session.test_count.toLocaleString() : 0],
+                      ['Test Coverage',session.test_coverage != null ? `${session.test_coverage.toFixed(1)}%` : (covExhausted ? '—' : 'Measuring…')],
+                    ].map(([l,v])=>(
+                      <div key={l} style={{ textAlign:'center' }}>
+                        <div style={{ fontSize:18,fontWeight:700,color:'var(--gray-800)' }}>{v}</div>
+                        <div style={{ fontSize:11,color:'var(--gray-500)' }}>{l}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-between mt-4">
+                <button className="btn btn-secondary" onClick={() => nav('/new-session')}>← Back</button>
+                {uploaded && (
+                  <button className="btn btn-primary btn-lg" onClick={() => nav(`/sessions/${id}/operators`)}>
+                    Next: Configure Operators →
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </AppShell>

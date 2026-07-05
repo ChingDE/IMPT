@@ -68,6 +68,11 @@ class User(Base):
     username: Mapped[Optional[str]]          = mapped_column(String(64), unique=True, index=True, nullable=True)
     must_change_password: Mapped[bool]       = mapped_column(Boolean, default=False)
 
+    # GitHub account linking (panel comment: connect project repository)
+    github_token: Mapped[Optional[str]]        = mapped_column(Text, nullable=True)        # encrypted OAuth token
+    github_login: Mapped[Optional[str]]        = mapped_column(String(255), nullable=True)
+    github_connected_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # NFR025 — tracking
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_active_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -161,7 +166,6 @@ class TestSession(Base):
     file_count: Mapped[Optional[int]]    = mapped_column(Integer, nullable=True)
     loc: Mapped[Optional[int]]           = mapped_column(Integer, nullable=True)
     test_count: Mapped[Optional[int]]    = mapped_column(Integer, nullable=True)
-    test_coverage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # line coverage %, 0-100 (computed live)
     detected_framework: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     # Operator config (FR070–FR079)
@@ -370,8 +374,6 @@ class FossProject(Base):
     loc:          Mapped[int] = mapped_column(Integer, nullable=False)
     size_band:    Mapped[str] = mapped_column(String(20), nullable=False)   # small | medium | large
     test_count:   Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    file_count:    Mapped[Optional[int]]   = mapped_column(Integer, nullable=True)   # source file count (pre-computed)
-    test_coverage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)      # line coverage %, 0-100 (pre-computed)
     version:      Mapped[str] = mapped_column(String(50), nullable=False)   # pinned version used
     zip_path:     Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # path on server
     is_active:    Mapped[bool] = mapped_column(Boolean, default=True)

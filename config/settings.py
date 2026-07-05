@@ -62,6 +62,16 @@ class Settings:
     # ── Frontend URL (for email links) ─────────────────────────────────
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
+    # ── GitHub account linking ─────────────────────────────────────────
+    # Public base URL of THIS API (where GitHub sends the OAuth callback).
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000")
+    GITHUB_CLIENT_ID: str     = os.getenv("GITHUB_CLIENT_ID", "")
+    GITHUB_CLIENT_SECRET: str = os.getenv("GITHUB_CLIENT_SECRET", "")
+    GITHUB_OAUTH_SCOPE: str   = os.getenv("GITHUB_OAUTH_SCOPE", "repo")   # 'repo' = private+public
+    GITHUB_TOKEN_KEY: str     = os.getenv("GITHUB_TOKEN_KEY", "")         # optional Fernet key; else derived from SECRET_KEY
+    GITHUB_MAX_IMPORT_MB: int = int(os.getenv("GITHUB_MAX_IMPORT_MB", "200"))
+    GITHUB_ENABLED: bool      = bool(os.getenv("GITHUB_CLIENT_ID", "") and os.getenv("GITHUB_CLIENT_SECRET", ""))
+
     # ── Upload / Storage ───────────────────────────────────────────────
     UPLOAD_DIR: str    = os.getenv("UPLOAD_DIR", "./uploads")
     MAX_UPLOAD_MB: int = int(os.getenv("MAX_UPLOAD_MB", "50"))

@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
     from api.routers.health    import router as health_router
     from api.routers.foss      import router as foss_router
     from api.routers.ws        import router as ws_router
+    from api.routers.github    import router as github_router
 
     app.include_router(auth_router)
     app.include_router(sessions_router)
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(foss_router)
     app.include_router(ws_router)
+    app.include_router(github_router)
 
     return app
 
