@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { login } from '../api/client';
 import { Alert, AuthAside } from '../components/UI';
+import PasswordInput from '../components/PasswordInput';
 
 const REMEMBER_KEY = 'impt_remembered_email';
 
@@ -90,7 +91,7 @@ export default function Login() {
           </div>
           <div className="form-group">
             <label className="form-label">Password</label>
-            <input className={`form-input ${error ? 'error' : ''}`} type="password"
+            <PasswordInput className={`form-input ${error ? 'error' : ''}`}
               placeholder="••••••••" value={form.password} onChange={set('password')} required />
           </div>
 

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { register } from '../api/client';
 import { Alert, AuthAside, useLegalModal } from '../components/UI';
 import { CheckCircle } from 'lucide-react';
+import PasswordInput from '../components/PasswordInput';
 
 // ── Password strength — defined OUTSIDE Register so it never remounts ─────────
 function PasswordStrength({ password }) {
@@ -196,9 +197,8 @@ export default function Register() {
           {/* Password */}
           <div className="form-group">
             <label className="form-label">Password</label>
-            <input
+            <PasswordInput
               className={inputClass('password')}
-              type="password"
               placeholder="••••••••"
               value={form.password}
               onChange={handleChange('password')}
@@ -213,9 +213,8 @@ export default function Register() {
           {/* Confirm password */}
           <div className="form-group">
             <label className="form-label">Confirm Password</label>
-            <input
+            <PasswordInput
               className={inputClass('confirm')}
-              type="password"
               placeholder="••••••••"
               value={form.confirm}
               onChange={handleChange('confirm')}

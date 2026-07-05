@@ -47,7 +47,7 @@ export function AdminLogin() {
           </div>
           <div className="form-group">
             <label className="form-label">Password</label>
-            <input className={`form-input ${error ? 'error' : ''}`} type="password" placeholder="••••••••"
+            <PasswordInput className={`form-input ${error ? 'error' : ''}`} placeholder="••••••••"
               value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
           </div>
           <button className="btn btn-full btn-lg" type="submit" disabled={loading}
@@ -66,6 +66,7 @@ export function AdminLogin() {
 
 // Admin first login
 import { CheckCircle } from 'lucide-react';
+import PasswordInput from '../components/PasswordInput';
 
 export function AdminFirstLogin() {
   const nav = useNavigate();
@@ -125,7 +126,7 @@ export function AdminFirstLogin() {
           </div>
           <div className="form-group">
             <label className="form-label">New Password</label>
-            <input className="form-input" type="password" placeholder="••••••••"
+            <PasswordInput className="form-input" placeholder="••••••••"
               value={form.new_password} onChange={e => setForm(f => ({ ...f, new_password: e.target.value }))} required />
             {pw && (
               <>
@@ -136,9 +137,9 @@ export function AdminFirstLogin() {
           </div>
           <div className="form-group">
             <label className="form-label">Confirm New Password</label>
-            <input
+            <PasswordInput
               className={`form-input ${form.confirm && form.new_password===form.confirm ? 'success' : form.confirm ? 'error' : ''}`}
-              type="password" placeholder="••••••••"
+              placeholder="••••••••"
               value={form.confirm} onChange={e => setForm(f => ({ ...f, confirm: e.target.value }))} required />
             {form.confirm && form.new_password===form.confirm && <div className="form-hint ok"><CheckCircle size={12} /> Passwords match</div>}
           </div>

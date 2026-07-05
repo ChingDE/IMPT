@@ -78,9 +78,14 @@ export function AuthProvider({ children }) {
     return () => events.forEach(e => window.removeEventListener(e, handler));
   }, [user, resetTimers]);
 
-  // NFR016: sign out when browser/tab closes if not persisted
+  // NFR016: sign out when browser/tab closes if not persisted.
+  // Skip during an in-app OAuth redirect (e.g. GitHub) — navigating away to the
+  // provider and back must not wipe the session token.
   useEffect(() => {
-    const handleUnload = () => { if (!isPersisted()) clearToken(); };
+    const handleUnload = () => {
+      if (sessionStorage.getItem('impt_oauth_in_progress')) return;
+      if (!isPersisted()) clearToken();
+    };
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);

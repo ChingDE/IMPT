@@ -64,6 +64,7 @@ export function ForgotPassword() {
 
 // src/pages/ResetPassword.jsx  FR034-FR039
 import { CheckCircle } from 'lucide-react';
+import PasswordInput from '../components/PasswordInput';
 
 export function ResetPassword() {
   const nav = useNavigate();
@@ -130,7 +131,7 @@ export function ResetPassword() {
 
             <div className="form-group">
               <label className="form-label">New Password</label>
-              <input className="form-input" type="password" placeholder="••••••••"
+              <PasswordInput className="form-input" placeholder="••••••••"
                 value={form.new_password} onChange={e => setForm(f => ({ ...f, new_password: e.target.value }))} />
               {pw && (
                 <>
@@ -146,9 +147,9 @@ export function ResetPassword() {
 
             <div className="form-group">
               <label className="form-label">Confirm New Password</label>
-              <input
+              <PasswordInput
                 className={`form-input ${form.confirm_password && form.new_password === form.confirm_password ? 'success' : form.confirm_password ? 'error' : ''}`}
-                type="password" placeholder="••••••••"
+                placeholder="••••••••"
                 value={form.confirm_password} onChange={e => setForm(f => ({ ...f, confirm_password: e.target.value }))} />
               {form.confirm_password && form.new_password === form.confirm_password &&
                 <div className="form-hint ok"><CheckCircle size={12} /> Passwords match</div>}

@@ -57,6 +57,7 @@ function NotifToggles() {
   );
 }
 import { CheckCircle } from 'lucide-react';
+import PasswordInput from '../components/PasswordInput';
 
 export default function Profile() {
   const nav = useNavigate();
@@ -175,7 +176,7 @@ export default function Profile() {
               {['current_password','new_password','confirm_password'].map(k=>(
                 <div className="form-group" key={k}>
                   <label className="form-label">{k==='current_password'?'Current Password':k==='new_password'?'New Password':'Confirm New Password'}</label>
-                  <input className="form-input" type="password" placeholder="••••••••"
+                  <PasswordInput className="form-input" placeholder="••••••••"
                     value={pw[k]} onChange={e=>setPw(p=>({...p,[k]:e.target.value}))} required />
                 </div>
               ))}

@@ -188,8 +188,11 @@ export function NewSessionUpload() {
     finally { setGhBusy(false); }
   };
   const ghConnect = async () => {
-    try { const { url } = await githubAuthorizeUrl(id); window.location.href = url; }
-    catch { setGhError('Could not start the GitHub connection.'); }
+    try {
+      const { url } = await githubAuthorizeUrl(id);
+      sessionStorage.setItem('impt_oauth_in_progress', '1');  // survive the redirect
+      window.location.href = url;
+    } catch { setGhError('Could not start the GitHub connection.'); }
   };
   const ghPickRepo = async (r) => {
     setGhRepo(r); setGhBranch(r.default_branch || ''); setGhBranches([]); setGhError('');
@@ -220,6 +223,7 @@ export function NewSessionUpload() {
   // Open the GitHub tab and surface result after the OAuth redirect returns.
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
+    if (q.get('github')) sessionStorage.removeItem('impt_oauth_in_progress');
     if (q.get('github') === 'connected') setTab('github');
     if (q.get('github') === 'error') { setTab('github'); setGhError('GitHub connection failed. Please try again.'); }
   }, []);
