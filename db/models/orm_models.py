@@ -166,6 +166,7 @@ class TestSession(Base):
     file_count: Mapped[Optional[int]]    = mapped_column(Integer, nullable=True)
     loc: Mapped[Optional[int]]           = mapped_column(Integer, nullable=True)
     test_count: Mapped[Optional[int]]    = mapped_column(Integer, nullable=True)
+    test_coverage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     detected_framework: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     # Operator config (FR070–FR079)
@@ -374,6 +375,8 @@ class FossProject(Base):
     loc:          Mapped[int] = mapped_column(Integer, nullable=False)
     size_band:    Mapped[str] = mapped_column(String(20), nullable=False)   # small | medium | large
     test_count:   Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    file_count:    Mapped[Optional[int]]   = mapped_column(Integer, nullable=True)
+    test_coverage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     version:      Mapped[str] = mapped_column(String(50), nullable=False)   # pinned version used
     zip_path:     Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # path on server
     is_active:    Mapped[bool] = mapped_column(Boolean, default=True)
