@@ -117,6 +117,8 @@ async def main():
         print(f"Running exhaustive on {len(foss)} FOSS projects (budget={a.budget}m, "
               f"timeout={a.timeout}s each). This is slow — Java runs full PIT.\n")
         results = []
+        n_ok = n_fail = 0
+        run_start = time.time()
         for i, fp in enumerate(foss, 1):
             slug = fp.get("slug") or fp.get("name")
             print(f"[{i}/{len(foss)}] {slug} ({fp.get('language')}) …", flush=True)
@@ -125,12 +127,17 @@ async def main():
             except Exception as e:  # noqa: BLE001
                 res = {"slug": slug, "ok": False, "reason": f"exception: {e}"}
             results.append(res)
+            if res.get("ok"): n_ok += 1
+            else: n_fail += 1
             mark = "OK" if res.get("ok") else "FAIL"
             extra = (f"score={res.get('mutation_score')}% "
                      f"mutants={res.get('total_mutants')} "
                      f"({res.get('elapsed_s')}s)" if res.get("ok")
                      else f"-> {res.get('reason')}")
             print(f"      {mark}: {extra}", flush=True)
+            _elapsed = int(time.time() - run_start)
+            print(f"      TALLY [{i}/{len(foss)}] done | {n_ok} ok, {n_fail} failed "
+                  f"| total elapsed {_elapsed//3600}h{(_elapsed%3600)//60:02d}m", flush=True)
 
         json.dump(results, open(a.out, "w"), indent=2)
         ok = [r for r in results if r.get("ok")]
