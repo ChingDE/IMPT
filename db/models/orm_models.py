@@ -405,5 +405,6 @@ class ExhaustiveBaseline(Base):
     source:          Mapped[str]   = mapped_column(String(20), default="computed")  # computed | literature
     computed_at:     Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     notes:           Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    mutants_json:    Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # full serialized mutant list (cache for fast FOSS-Java sessions)
 
     project: Mapped["FossProject"] = relationship("FossProject", back_populates="baseline")

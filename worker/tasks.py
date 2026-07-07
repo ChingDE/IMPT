@@ -527,6 +527,125 @@ def _resolve_upload_path(upload_path: str) -> str:
     return upload_path
 
 
+
+# ── FOSS-Java exhaustive mutant cache ─────────────────────────────────────────
+# PIT runs the whole project exhaustively (Phase 1), so live FOSS-Java sessions
+# would make testers wait a long time. We cache the full mutant list (with real
+# PIT statuses) on the FOSS project's exhaustive baseline; later sessions load it
+# and skip the live run, going straight to Phase 2 prioritization. JS is not
+# cached (its live dry-run is already fast and gives the real IMPT experience).
+
+def _foss_cache_engine():
+    import sqlalchemy as sa
+    from config.settings import get_settings
+    s = get_settings()
+    url = s.DATABASE_URL_SYNC or s.DATABASE_URL.replace("+asyncpg", "").replace("+aiosqlite", "")
+    return sa.create_engine(url, pool_pre_ping=True)
+
+
+def _mutant_real_status(m):
+    rs = getattr(m, "real_status", None) or getattr(m, "status", None)
+    return rs.value if hasattr(rs, "value") else str(rs)
+
+
+def _serialize_mutant(m):
+    fac = getattr(m, "factors", None)
+    return {
+        "operator": m.operator.value if hasattr(m.operator, "value") else str(m.operator),
+        "file": m.location.file, "line": m.location.line,
+        "column": getattr(m.location, "column", 0),
+        "method_name": getattr(m.location, "method_name", None),
+        "class_name": getattr(m.location, "class_name", None),
+        "original_code": m.original_code, "mutated_code": m.mutated_code,
+        "status": _mutant_real_status(m),
+        "killing_test": getattr(m, "killing_test", None),
+        "test_coverage": list(m.test_coverage) if getattr(m, "test_coverage", None) else [],
+        "factors": ({
+            "historical_effectiveness": fac.historical_effectiveness,
+            "cyclomatic_complexity": fac.cyclomatic_complexity,
+            "cognitive_complexity": fac.cognitive_complexity,
+            "nesting_depth": fac.nesting_depth,
+            "security_score": fac.security_score,
+            "days_since_change": fac.days_since_change,
+            "bug_density": fac.bug_density,
+        } if fac else None),
+    }
+
+
+def _deserialize_mutant(dct):
+    from impt.models.mutant import (Mutant, MutationOperator, CodeLocation,
+                                    PriorityFactors, ExecutionStatus)
+    try:
+        op = MutationOperator(dct["operator"])
+    except Exception:
+        op = MutationOperator.AOR
+    loc = CodeLocation(file=dct.get("file", "unknown"), line=dct.get("line", 1),
+                       column=dct.get("column", 0), method_name=dct.get("method_name"),
+                       class_name=dct.get("class_name"))
+    fac = PriorityFactors(**dct["factors"]) if dct.get("factors") else PriorityFactors()
+    m = Mutant(operator=op, location=loc,
+               original_code=dct.get("original_code", ""),
+               mutated_code=dct.get("mutated_code", ""),
+               factors=fac, test_coverage=set(dct.get("test_coverage", [])))
+    try:
+        st = ExecutionStatus(dct.get("status", "SURVIVED"))
+    except Exception:
+        st = ExecutionStatus.SURVIVED
+    m.real_status = st                     # ground truth from the exhaustive PIT run
+    m.status = ExecutionStatus.PENDING
+    m.killing_test = dct.get("killing_test")
+    return m
+
+
+def _load_foss_cache(foss_project_id: str):
+    """Return (mutants, loc, test_count) from cache, or None on miss."""
+    import sqlalchemy as sa, json
+    try:
+        eng = _foss_cache_engine()
+        with eng.connect() as c:
+            row = c.execute(sa.text(
+                "SELECT mutants_json FROM exhaustive_baselines "
+                "WHERE project_id=:pid AND mutants_json IS NOT NULL"),
+                {"pid": foss_project_id}).fetchone()
+        if not row or not row[0]:
+            return None
+        payload = json.loads(row[0])
+        muts = [_deserialize_mutant(x) for x in payload.get("mutants", [])]
+        if not muts:
+            return None
+        return muts, payload.get("loc") or 5000, payload.get("test_count") or 0
+    except Exception as exc:
+        log.warning("FOSS cache load failed for %s: %s", foss_project_id, exc)
+        return None
+
+
+def _cache_foss_mutants(foss_project_id: str, mutants, loc, test_count) -> None:
+    """Upsert the full mutant list onto the project's exhaustive baseline row."""
+    import sqlalchemy as sa, json, uuid as _uuid
+    try:
+        payload = json.dumps({"loc": loc, "test_count": test_count,
+                              "mutants": [_serialize_mutant(m) for m in mutants]})
+        total  = len(mutants)
+        killed = sum(1 for m in mutants if _mutant_real_status(m) == "KILLED")
+        score  = (killed / total) if total else 0.0
+        eng = _foss_cache_engine()
+        with eng.begin() as c:
+            n = c.execute(sa.text(
+                "UPDATE exhaustive_baselines SET mutants_json=:mj WHERE project_id=:pid"),
+                {"mj": payload, "pid": foss_project_id}).rowcount
+            if not n:
+                c.execute(sa.text(
+                    "INSERT INTO exhaustive_baselines "
+                    "(id, project_id, total_mutants, killed_mutants, mutation_score, "
+                    "execution_time_seconds, mutants_json, source) "
+                    "VALUES (:id,:pid,:tot,:kil,:score,0,:mj,'computed')"),
+                    {"id": _uuid.uuid4().hex, "pid": foss_project_id, "tot": total,
+                     "kil": killed, "score": score, "mj": payload})
+        log.info("Cached %d PIT mutants for FOSS project %s", total, foss_project_id)
+    except Exception as exc:
+        log.warning("FOSS cache save failed for %s: %s", foss_project_id, exc)
+
+
 def _get_all_mutants(config: dict, job_id: str):
     """
     Phase 1: Get ALL mutants from the project.
@@ -543,6 +662,16 @@ def _get_all_mutants(config: dict, job_id: str):
         if Path(candidate).exists():
             upload_path = candidate
             log.info("Using FOSS project path: %s", upload_path)
+
+    # FOSS Java: serve cached exhaustive mutants and skip the long live PIT run.
+    _fpid = config.get("foss_project_id")
+    if _fpid and config.get("language", "java").lower() == "java":
+        _cached = _load_foss_cache(_fpid)
+        if _cached is not None:
+            _muts, _loc, _tc = _cached
+            log.info("Phase 1: loaded %d cached PIT mutants for FOSS %s (no live run)",
+                     len(_muts), _fpid)
+            return _muts, (upload_path or f"/app/foss/{config.get('foss_slug','')}"), _loc, _tc
 
     if upload_path and Path(upload_path).exists():
         try:
@@ -576,6 +705,8 @@ def _get_all_mutants(config: dict, job_id: str):
                 # it as ground truth so Phase 3 uses real statuses, not simulation.
                 m.real_status = m.status
                 m.status = ExecutionStatus.PENDING
+            if config.get("foss_project_id") and lang == "java":
+                _cache_foss_mutants(config["foss_project_id"], mutants, loc, test_count)
             log.info("Phase 1: %d mutants enumerated (LOC=%d, tests=%d) from %s",
                      len(mutants), loc, test_count, upload_path)
             return mutants, upload_path, loc, test_count
