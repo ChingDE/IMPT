@@ -23,7 +23,7 @@ export default function Results() {
   const [sortBy, setSortBy]       = useState('priority_score');
   const [sortDir, setSortDir]     = useState('desc');
   const [page, setPage]           = useState(1);
-  const [expandedId, setExpandedId] = useState(null);
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
   const [showExplanation, setShowExplanation] = useState(false);
   const [shareUrl, setShareUrl]   = useState('');
   const [shareErr, setShareErr]   = useState('');
@@ -514,8 +514,8 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
               <tbody>
                 {pagedMutants.map(m => (
                   <>
-                    <tr key={m.id} style={{cursor:'pointer'}} onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}>
-                      <td>{expandedId === m.id ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</td>
+                    <tr key={m.id} style={{cursor:'pointer'}} onClick={() => setExpandedIds(s => { const n = new Set(s); n.has(m.id) ? n.delete(m.id) : n.add(m.id); return n; })}>
+                      <td>{expandedIds.has(m.id) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</td>
                       <td className="bold">{m.operator}</td>
                       <td style={{fontFamily:'var(--mono)',fontSize:12}}>{m.file?.split('/').pop()}</td>
                       <td>{m.line}</td>
@@ -538,7 +538,7 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
                       <td style={{fontSize:12,color:'var(--gray-500)'}}>{m.killing_test || '—'}</td>
                     </tr>
                     {/* FR112 — Source code diff for survived mutants */}
-                    {expandedId === m.id && (
+                    {expandedIds.has(m.id) && (
                       <tr key={`${m.id}-detail`}>
                         <td colSpan={7} style={{background:'var(--gray-50)',padding:'12px 16px'}}>
                           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>

@@ -415,8 +415,13 @@ class StrykerAdapter:
             except Exception as e:
                 log.warning("Could not parse package.json: %s", e)
 
-        # Detect source pattern — check TypeScript first
-        has_ts = any(self.project_dir.rglob("*.ts")) if self.project_dir.exists() else False
+        # Detect source pattern — check TypeScript first.
+        # Ignore .d.ts declaration files: many JS packages (chalk, ms, uuid, …)
+        # ship type declarations, which must NOT flip the project into TS mode
+        # (that would mutate only the ~empty .d.ts and yield zero real mutants).
+        has_ts = (any(p for p in self.project_dir.rglob("*.ts")
+                      if not p.name.endswith(".d.ts"))
+                  if self.project_dir.exists() else False)
         is_ts  = has_ts and not any((self.project_dir / d).exists()
                                      for d in ["lib", "dist"]
                                      if any((self.project_dir / d).rglob("*.js")))
