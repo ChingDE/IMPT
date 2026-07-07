@@ -764,6 +764,7 @@ export function NewSessionBudget() {
 
   if (!session) return <AppShell><div className="page-content" style={{textAlign:'center',paddingTop:60,color:'var(--gray-400)'}}>Loading…</div></AppShell>;
 
+  const isJava = session?.language === 'java';
   const estCoverage = Math.min(100, Math.round(10 + (budget/120)*85));
   const correlation = budget >= 30 ? 'High (≥0.95)' : budget >= 15 ? 'Medium (0.85-0.94)' : 'Low (<0.85)';
   const corrColor   = budget >= 30 ? 'var(--green)' : budget >= 15 ? 'var(--amber)' : 'var(--red)';
@@ -819,6 +820,22 @@ export function NewSessionBudget() {
                 onChange={e=>setBudgetVal(+e.target.value)} />
               <div className="slider-val">{budget} <span>min</span></div>
               <div className="slider-labels"><span>5 min (Fast)</span><span>120 min (Thorough)</span></div>
+
+              {isJava && (
+                <div style={{ marginTop:12, padding:'12px 14px', borderRadius:8,
+                     background:'#FFF4E5', border:'2px solid var(--amber, #E8A317)', color:'#8A5300' }}>
+                  <div style={{ fontWeight:700, fontSize:13, marginBottom:4 }}>
+                    ⏱️ For Java: this budget selects mutants — it does not cap the run time
+                  </div>
+                  <div style={{ fontSize:12.5, lineHeight:1.55 }}>
+                    PIT analyzes the <strong>entire</strong> project first, so this time budget does
+                    <strong> not</strong> limit how long testing takes. It determines the
+                    <strong> subset of prioritized mutants</strong> IMPT selects and reports — the mutants
+                    that would fit within this budget. Actual analysis time depends on project size:
+                    cached FOSS projects return in seconds, while large uploads may take several minutes.
+                  </div>
+                </div>
+              )}
 
               {/* FR083 — Validation */}
               {budget < 5 && <Alert type="error">Time budget must be at least 5 minutes.</Alert>}

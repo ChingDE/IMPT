@@ -216,6 +216,7 @@ export default function Running() {
   const primaryDone = primaryJobsDone.length > 0 &&
     primaryJobsDone.every(j => ['COMPLETED','FAILED','CANCELLED'].includes((j.status || '').toUpperCase()));
   const budget       = session?.time_budget_minutes ? session.time_budget_minutes * 60 : 1200;
+  const isJava       = session?.language === 'java';
   const totalMutants = impt?.total_mutants || session?.estimated_mutant_count || 0;
   const selectedCount = impt?.selected_mutants || 0;
   const execMutants  = impt?.executed_mutants || 0;
@@ -279,12 +280,16 @@ export default function Running() {
             <div style={{ display:'flex', justifyContent:'space-between', fontSize:12.5, color:'var(--gray-500)' }}>
               {/* Mutant count display — FR requirement: show x of y */}
               <span>
-                {execDenom > 0
-                  ? `Executing mutant ${Math.min(execMutants, execDenom)} of ${execDenom}`
-                  : `Elapsed: ${Math.floor(elapsed/60)}m ${elapsed%60}s`
+                {isJava
+                  ? `Elapsed: ${Math.floor(elapsed/60)}m ${elapsed%60}s${execDenom > 0 ? ` · mutant ${Math.min(execMutants, execDenom)}/${execDenom}` : ''}`
+                  : execDenom > 0
+                    ? `Executing mutant ${Math.min(execMutants, execDenom)} of ${execDenom}`
+                    : `Elapsed: ${Math.floor(elapsed/60)}m ${elapsed%60}s`
                 }
               </span>
-              <span>~{Math.floor(remaining/60)}m {remaining%60}s remaining</span>
+              <span>{isJava
+                ? 'PIT analyzes the full project — time depends on project size'
+                : `~${Math.floor(remaining/60)}m ${remaining%60}s remaining`}</span>
             </div>
           </div>
 

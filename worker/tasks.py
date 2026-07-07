@@ -357,7 +357,9 @@ def _run_engine(job_id: str, config: dict) -> dict:
         # Estimate execution times
         engine.estimator.estimate_population(reduced)
 
-        # Select within time budget
+        # Select within time budget (original TimeBudgetOptimizer knapsack).
+        # For Java the selected subset is what would fit the budget; PIT itself
+        # ran exhaustively in Phase 1, so the budget governs selection, not runtime.
         selected = engine.optimizer.select(reduced)
         log.info("Job %s: IMPT selected %d/%d mutants within %ds budget",
                  job_id, len(selected), len(all_mutants), ecfg.time_budget_seconds)
