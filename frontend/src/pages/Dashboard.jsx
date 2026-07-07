@@ -183,6 +183,7 @@ export default function Dashboard() {
               <thead>
                 <tr>
                   <th>Session Name</th>
+                  <th>Project</th>
                   <th>Language</th>
                   <th>Status</th>
                   <th>Created</th>
@@ -203,6 +204,7 @@ export default function Dashboard() {
                       return nav(`/sessions/${id}/upload`);
                     }}>
                     <td className="bold">{s.name}</td>
+                    <td style={{ fontSize:12, color:'var(--gray-600)', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={s.project_name || ''}>{s.project_name || '—'}</td>
                     <td><span className="badge badge-blue">{s.language}</span></td>
                     <td><StatusBadge status={s.status} /></td>
                     <td className="text-muted text-sm">{new Date(s.created_at).toLocaleDateString()}</td>

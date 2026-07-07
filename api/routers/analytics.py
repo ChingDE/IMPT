@@ -143,6 +143,15 @@ async def reports_stats(
         elif s >= 55: dist["average"]   += 1
         else:         dist["poor"]      += 1
 
+    # Resolve project names for the recent list (FOSS slug or uploaded filename)
+    _foss_ids = {getattr(s, "foss_project_id", None) for s in completed_sessions if getattr(s, "foss_project_id", None)}
+    _foss_names = {}
+    if _foss_ids:
+        from db.models.orm_models import FossProject
+        from sqlalchemy import select as _sel
+        _rows = (await db.execute(_sel(FossProject.id, FossProject.slug).where(FossProject.id.in_(_foss_ids)))).all()
+        _foss_names = {r[0]: r[1] for r in _rows}
+
     # Recent sessions with job data
     recent = []
     for s in sorted(completed_sessions, key=lambda x: x.updated_at or x.created_at, reverse=True)[:5]:
@@ -154,6 +163,7 @@ async def reports_stats(
         recent.append({
             "session_id":    s.id,
             "name":          s.name,
+            "project_name":  _foss_names.get(getattr(s, "foss_project_id", None)) or s.upload_filename,
             "language":      s.language,
             "completed_at":  s.updated_at.isoformat() if s.updated_at else "",
             "mutation_score": round((job.mutation_score or 0) * 100, 1),

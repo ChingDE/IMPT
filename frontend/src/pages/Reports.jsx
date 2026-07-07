@@ -191,6 +191,7 @@ export default function Reports() {
               <thead>
                 <tr>
                   <th>Session Name</th>
+                  <th>Project</th>
                   <th>Date</th>
                   <th>Mutation Score</th>
                   <th>Mutants Tested</th>
@@ -204,6 +205,7 @@ export default function Reports() {
                 {recent.map(r => (
                   <tr key={r.session_id}>
                     <td style={{ fontWeight:600 }}>{r.name}</td>
+                    <td style={{ fontSize:12, color:'var(--gray-600)', maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={r.project_name || ''}>{r.project_name || '—'}</td>
                     <td style={{ fontSize:12, color:'var(--gray-500)' }}>
                       {new Date(r.completed_at).toLocaleDateString('en-US',
                         { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}
