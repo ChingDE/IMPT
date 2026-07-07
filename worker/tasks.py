@@ -282,6 +282,33 @@ def _mark_failed_sync(job_id: str, error: str) -> None:
 
 # ── Core engine runner ────────────────────────────────────────────────────────
 
+def _random_select(mutants, budget_seconds, seed):
+    """Random-sampling baseline: shuffle, then greedily fill the time budget."""
+    import random as _r
+    pool = list(mutants)
+    _r.Random(hash(seed)).shuffle(pool)
+    out, rem = [], float(budget_seconds)
+    for m in pool:
+        t = max(getattr(m, "execution_time", 0.0) or 0.0, 0.001)
+        if t <= rem:
+            out.append(m); rem -= t
+    return out or pool[:1]
+
+
+def _operator_based_select(mutants, budget_seconds, op_multipliers):
+    """Operator-based baseline: rank by operator effectiveness only, fill budget."""
+    def _key(m):
+        op = m.operator.value if hasattr(m.operator, "value") else str(m.operator)
+        return op_multipliers.get(op, 1.0)
+    ranked = sorted(mutants, key=_key, reverse=True)
+    out, rem = [], float(budget_seconds)
+    for m in ranked:
+        t = max(getattr(m, "execution_time", 0.0) or 0.0, 0.001)
+        if t <= rem:
+            out.append(m); rem -= t
+    return out or ranked[:1]
+
+
 def _run_engine(job_id: str, config: dict) -> dict:
     from impt.engine import IMPTEngine, EngineConfig
     from impt.models.project import MutationFramework, Project, ProjectConfig
@@ -335,6 +362,16 @@ def _run_engine(job_id: str, config: dict) -> dict:
     project.loc        = actual_loc
     project.test_count = actual_test_count
 
+    # Operator selection (Step 3): restrict to the user's chosen operators for
+    # normal/baseline runs. The exhaustive/ground-truth run keeps ALL operators.
+    _sel_ops = set(config.get("selected_operators") or [])
+    if _sel_ops and not is_exhaustive:
+        _before = len(all_mutants)
+        all_mutants = [m for m in all_mutants
+                       if (m.operator.value if hasattr(m.operator, "value") else str(m.operator)) in _sel_ops]
+        log.info("Job %s: operator filter %d -> %d mutants (selected: %s)",
+                 job_id, _before, len(all_mutants), sorted(_sel_ops))
+
     # Write initial total so UI shows "X of Y" immediately
     _write_progress_sync(job_id, 0, 0, len(all_mutants), 0)
     _publish_progress(_session_id, job_id, 0, 0, len(all_mutants), 0, _strategy)
@@ -348,47 +385,40 @@ def _run_engine(job_id: str, config: dict) -> dict:
         reduced  = all_mutants  # no subsumption reduction
         log.info("Job %s: EXHAUSTIVE — running all %d mutants", job_id, len(selected))
     else:
-        # Score the population
+        # Score the population (drives IMPT selection and the Results display).
         engine.scorer.score_population(all_mutants)
+        strategy = config.get("strategy", "impt")
 
-        # Reduce via subsumption
-        reduced = engine.reducer.reduce(all_mutants)
-
-        # Estimate execution times
-        engine.estimator.estimate_population(reduced)
-
-        # Select within time budget (original TimeBudgetOptimizer knapsack).
-        # For Java the selected subset is what would fit the budget; PIT itself
-        # ran exhaustively in Phase 1, so the budget governs selection, not runtime.
-        selected = engine.optimizer.select(reduced)
-        log.info("Job %s: IMPT selected %d/%d mutants within %ds budget",
-                 job_id, len(selected), len(all_mutants), ecfg.time_budget_seconds)
+        if strategy == "random":
+            # Genuine random-sampling baseline: a random subset filling the same
+            # time budget — no IMPT scoring/subsumption drives the selection.
+            reduced  = all_mutants
+            engine.estimator.estimate_population(all_mutants)
+            selected = _random_select(all_mutants, ecfg.time_budget_seconds, job_id)
+            log.info("Job %s: RANDOM baseline selected %d/%d within %ds budget",
+                     job_id, len(selected), len(all_mutants), ecfg.time_budget_seconds)
+        elif strategy == "operator_based":
+            # Genuine operator-based baseline: select by operator effectiveness
+            # alone (single-factor heuristic), filling the same time budget.
+            reduced  = all_mutants
+            engine.estimator.estimate_population(all_mutants)
+            _mult = getattr(engine.scorer, "multipliers", {}) or {}
+            selected = _operator_based_select(all_mutants, ecfg.time_budget_seconds, _mult)
+            log.info("Job %s: OPERATOR-BASED baseline selected %d/%d within %ds budget",
+                     job_id, len(selected), len(all_mutants), ecfg.time_budget_seconds)
+        else:
+            # IMPT: multi-factor scoring + subsumption reduction + knapsack.
+            reduced = engine.reducer.reduce(all_mutants)
+            engine.estimator.estimate_population(reduced)
+            selected = engine.optimizer.select(reduced)
+            log.info("Job %s: IMPT selected %d/%d mutants within %ds budget",
+                     job_id, len(selected), len(all_mutants), ecfg.time_budget_seconds)
 
     # Write selected count
     _write_progress_sync(job_id, 0, 0, len(all_mutants), len(selected))
     _publish_progress(_session_id, job_id, 0, 0, len(all_mutants), len(selected), _strategy)
 
-    # Apply strategy ordering
-    strategy = config.get("strategy", "impt")
-    if strategy == "random":
-        import random as _rng
-        _rng.Random(hash(job_id)).shuffle(selected)
-    elif strategy == "operator_based":
-        from collections import defaultdict
-        by_op = defaultdict(list)
-        for m in selected:
-            by_op[m.operator.value].append(m)
-        interleaved, iters = [], [iter(v) for v in by_op.values()]
-        while iters:
-            still = []
-            for it in iters:
-                try:
-                    interleaved.append(next(it))
-                    still.append(it)
-                except StopIteration:
-                    pass
-            iters = still
-        selected = interleaved
+    # (Selection above already reflects the chosen strategy — no reordering.)
 
     # ── Phase 3: Execute selected mutants ────────────────────────────────────
     if _is_cancelled(job_id):

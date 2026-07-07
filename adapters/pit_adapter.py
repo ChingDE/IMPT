@@ -651,6 +651,14 @@ class PITAdapter:
             return _re.sub(r"return\b.*?;", "return false;", line, count=1)
         if "with null" in d and "return" in line:
             return _re.sub(r"return\b.*?;", "return null;", line, count=1)
+        # Negated conditional with no swappable operator (e.g. instanceof, a
+        # boolean method call): wrap the if/while condition in !(...).
+        if "negated conditional" in d:
+            m = _re.search(r"\b(if|while)\s*\((.+)\)", line)
+            if m:
+                cond = m.group(2).rstrip()
+                cond = _re.sub(r"\s*\{\s*$", "", cond)
+                return line[:m.start(2)] + "!(" + cond + ")" + line[m.start(2)+len(m.group(2)):]
         return ""
 
     def _parse_results(self) -> List[Mutant]:
