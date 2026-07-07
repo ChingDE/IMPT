@@ -250,7 +250,7 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
             <div>
               <h2 style={{ fontSize:18,fontWeight:700 }}>{session?.name}</h2>
               <div style={{ fontSize:13,color:'var(--gray-500)',marginTop:4 }}>
-                {session?.language} · Completed {session?.completed_at ? new Date(session.completed_at).toLocaleString() : ''}
+                {session?.project_name && <><span style={{fontWeight:600,color:'var(--gray-700)'}}>{session.project_name}</span> · </>}{session?.language} · Completed {session?.completed_at ? new Date(session.completed_at).toLocaleString() : ''}
                 {session?.started_at && session?.completed_at && (
                   <span style={{ marginLeft:8 }}>
                     · Duration: {session?.completed_at && session?.started_at ? Math.round((new Date(session.completed_at)-new Date(session.started_at))/60000) : '—'} min
@@ -535,7 +535,7 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
                           <span style={{fontSize:11,minWidth:28}}>{(m.priority_score||0).toFixed(1)}</span>
                         </div>
                       </td>
-                      <td style={{fontSize:12,color:'var(--gray-500)'}}>{m.killing_test || '—'}</td>
+                      <td style={{fontSize:12,color:'var(--gray-500)',maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={m.killing_test || ''}>{m.killing_test || '—'}</td>
                     </tr>
                     {/* FR112 — Source code diff for survived mutants */}
                     {expandedIds.has(m.id) && (
@@ -544,13 +544,13 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
                           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                             <div>
                               <div style={{fontSize:11,fontWeight:600,color:'var(--gray-500)',marginBottom:4}}>Original Code</div>
-                              <pre style={{background:'#F0FDF4',border:'1px solid var(--green-light)',borderRadius:6,padding:'8px 12px',fontSize:12,fontFamily:'var(--mono)',overflow:'auto',margin:0}}>
+                              <pre style={{background:'#F0FDF4',border:'1px solid var(--green-light)',borderRadius:6,padding:'8px 12px',fontSize:12,fontFamily:'var(--mono)',overflow:'auto',margin:0,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
                                 {m.original_code || '—'}
                               </pre>
                             </div>
                             <div>
                               <div style={{fontSize:11,fontWeight:600,color:'var(--gray-500)',marginBottom:4}}>Mutated Code</div>
-                              <pre style={{background:'var(--red-light)',border:'1px solid #FECACA',borderRadius:6,padding:'8px 12px',fontSize:12,fontFamily:'var(--mono)',overflow:'auto',margin:0}}>
+                              <pre style={{background:'var(--red-light)',border:'1px solid #FECACA',borderRadius:6,padding:'8px 12px',fontSize:12,fontFamily:'var(--mono)',overflow:'auto',margin:0,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
                                 {m.mutated_code || '—'}
                               </pre>
                             </div>

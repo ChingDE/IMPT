@@ -182,6 +182,11 @@ class SessionOut(BaseModel):
     selected_strategy: str = "impt"
     run_exhaustive: bool = False
     foss_project_id: Optional[str] = None
+    project_name: Optional[str] = None
+    mutation_score: Optional[float] = None
+    executed_mutants: Optional[int] = None
+    total_mutants: Optional[int] = None
+    time_saved_pct: Optional[float] = None
     run_comparison: bool = True
     run_operator_based: bool = True
     estimated_mutant_count: Optional[int] = None

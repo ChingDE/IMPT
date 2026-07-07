@@ -76,9 +76,10 @@ export default function History() {
 
   const exportCSV = () => {
     const rows = [
-      ['Session Name', 'Language', 'Date', 'Mutation Score (%)', 'Mutants Executed', 'Total Mutants', 'Strategy', 'Time Saved (%)'],
+      ['Session Name', 'Project', 'Language', 'Date', 'Mutation Score (%)', 'Mutants Executed', 'Total Mutants', 'Strategy', 'Time Saved (%)'],
       ...filtered.map(s => [
         s.name,
+        s.project_name || '—',
         s.language || '—',
         new Date(s.updated_at || s.created_at).toLocaleString(),
         s.mutation_score != null ? s.mutation_score.toFixed(1) : '—',
@@ -177,6 +178,7 @@ export default function History() {
                 <thead>
                   <tr>
                     <th>Session Name</th>
+                    <th>Project</th>
                     <th>Language</th>
                     <th>Test Date</th>
                     <th>Mutation Score</th>
@@ -192,6 +194,7 @@ export default function History() {
                         onClick={() => nav(`/results/${s.id}`)}>
                         {s.name}
                       </td>
+                      <td style={{ fontSize:12, color:'var(--gray-600)', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={s.project_name || ''}>{s.project_name || '—'}</td>
                       <td><span className="badge badge-blue">{s.language || '—'}</span></td>
                       <td style={{ fontSize:12, color:'var(--gray-500)' }}>
                         {new Date(s.updated_at||s.created_at).toLocaleString('en-US',

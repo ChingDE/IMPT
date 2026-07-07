@@ -98,10 +98,20 @@ async def list_sessions(
             if j.session_id not in job_map:
                 job_map[j.session_id] = j
 
+    # Resolve project names (FOSS slug or uploaded filename)
+    _foss_ids = {getattr(s, "foss_project_id", None) for s in sessions if getattr(s, "foss_project_id", None)}
+    _foss_names = {}
+    if _foss_ids:
+        from db.models.orm_models import FossProject
+        from sqlalchemy import select as _sel
+        _rows = (await db.execute(_sel(FossProject.id, FossProject.slug).where(FossProject.id.in_(_foss_ids)))).all()
+        _foss_names = {r[0]: r[1] for r in _rows}
+
     result = []
     for s in sessions:
         job = job_map.get(s.id)
         d = s.__dict__.copy()
+        d["project_name"]       = _foss_names.get(getattr(s, "foss_project_id", None)) or s.upload_filename
         d["mutation_score"]     = round((job.mutation_score or 0) * 100, 1) if job else None
         d["executed_mutants"]   = job.executed_mutants if job else None
         d["total_mutants"]      = job.total_mutants if job else None
@@ -122,7 +132,18 @@ async def get_session(
     session = await repo.get_by_id(session_id)
     if not session or session.owner_id != current_user.id:
         raise HTTPException(status_code=404, detail="Session not found")
-    return session
+    d = session.__dict__.copy()
+    d["project_name"] = session.upload_filename
+    if getattr(session, "foss_project_id", None):
+        from db.models.orm_models import FossProject
+        from sqlalchemy import select as _sel
+        fp = (await db.execute(_sel(FossProject).where(FossProject.id == session.foss_project_id))).scalar_one_or_none()
+        if fp:
+            d["project_name"] = fp.slug
+            if d.get("loc") is None:        d["loc"]        = fp.loc
+            if d.get("file_count") is None: d["file_count"] = fp.file_count
+            if d.get("test_count") is None: d["test_count"] = fp.test_count
+    return d
 
 
 # ── Get session jobs ──────────────────────────────────────────────────────────
