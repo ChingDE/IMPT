@@ -415,7 +415,10 @@ def _run_engine(job_id: str, config: dict) -> dict:
                               len(all_mutants), len(selected))
         _publish_progress(_session_id, job_id, exec_count[0], kill_count[0], len(all_mutants), len(selected), _strategy)
     else:
-        # Java or synthetic: use statistical simulation runner
+        # Java: apply PIT's real Phase-1 statuses (ground truth) to the selected
+        # subset - no simulation. Only synthetic/demo mutants (which carry no
+        # real_status) fall back to the statistical simulator, and that path is
+        # reachable exclusively in explicit demo mode.
         rng = random.Random(hash(job_id))
         kill_rates = {
             "AOR": 0.92, "ROR": 0.88, "COR": 0.85, "SOR": 0.76,
@@ -423,8 +426,11 @@ def _run_engine(job_id: str, config: dict) -> dict:
             "ABS": 0.80, "VDL": 0.78, "ODL": 0.72,
             "NEGATE_RETURN": 0.88, "NULL_RETURN": 0.70,
         }
-        def runner(m):
-            if m.status == ExecutionStatus.PENDING:
+        for m in selected:
+            rs = getattr(m, "real_status", None)
+            if rs in (ExecutionStatus.KILLED, ExecutionStatus.SURVIVED):
+                m.status = rs
+            elif m.status == ExecutionStatus.PENDING:
                 op_key = m.operator.value if hasattr(m.operator, "value") else str(m.operator)
                 m.status = (ExecutionStatus.KILLED
                             if rng.random() < kill_rates.get(op_key, 0.70)
@@ -432,14 +438,15 @@ def _run_engine(job_id: str, config: dict) -> dict:
             exec_count[0] += 1
             if m.status == ExecutionStatus.KILLED:
                 kill_count[0] += 1
-            if exec_count[0] % 3 == 0 or exec_count[0] == 1:
+            if exec_count[0] % 25 == 0 or exec_count[0] == 1:
                 _write_progress_sync(job_id, exec_count[0], kill_count[0],
                                       len(all_mutants), len(selected))
                 _publish_progress(_session_id, job_id, exec_count[0], kill_count[0],
                                   len(all_mutants), len(selected), _strategy)
-
-        for m in selected:
-            runner(m)
+        _write_progress_sync(job_id, exec_count[0], kill_count[0],
+                              len(all_mutants), len(selected))
+        _publish_progress(_session_id, job_id, exec_count[0], kill_count[0],
+                          len(all_mutants), len(selected), _strategy)
 
     # Build result using already-selected/executed mutants
     from impt.models.result import MutationTestResult
@@ -565,13 +572,25 @@ def _get_all_mutants(config: dict, job_id: str):
                 test_count = adapter.count_tests()
             FactorEnricher(p).enrich(mutants)
             for m in mutants:
+                # Java/PIT computes real KILLED/SURVIVED during Phase 1; preserve
+                # it as ground truth so Phase 3 uses real statuses, not simulation.
+                m.real_status = m.status
                 m.status = ExecutionStatus.PENDING
             log.info("Phase 1: %d mutants enumerated (LOC=%d, tests=%d) from %s",
                      len(mutants), loc, test_count, upload_path)
             return mutants, upload_path, loc, test_count
         except Exception as e:
-            log.error("Adapter failed, using synthetic fallback: %s", e)
-    log.info("Using synthetic population for job %s", job_id)
+            log.error("Adapter failed: %s", e)
+            if not _synthetic_allowed(config):
+                raise RuntimeError(
+                    f"Real mutation run failed and synthetic fallback is disabled: {e}"
+                ) from e
+    if not _synthetic_allowed(config):
+        raise RuntimeError(
+            "No runnable project available and synthetic fallback is disabled. "
+            "Set IMPT_ALLOW_SYNTHETIC=1 only for demos, never for evaluation runs."
+        )
+    log.warning("Using SYNTHETIC population for job %s (DEMO MODE - not real data)", job_id)
     return _synthetic_population(config.get("loc", 5000), seed=hash(job_id)), None, 5000, 100
 
 
@@ -617,6 +636,11 @@ def _get_mutants(config: dict, job_id: str):
     """Legacy entry point — returns all mutants for scoring."""
     mutants, _ = _get_all_mutants(config, job_id)
     return mutants
+
+
+def _synthetic_allowed(config: dict) -> bool:
+    """Synthetic mutants are ONLY for explicit demos, never real evaluation."""
+    return bool(config.get("allow_synthetic")) or os.getenv("IMPT_ALLOW_SYNTHETIC") == "1"
 
 
 def _synthetic_population(loc: int, seed: int):

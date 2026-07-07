@@ -615,6 +615,44 @@ class PITAdapter:
         except Exception:
             return ""
 
+    @staticmethod
+    def _reconstruct_mutated(line: str, desc: str) -> str:
+        """Best-effort mutated source line from the REAL original line + PIT's
+        description, for unambiguous operators only (a single candidate token).
+        Never fabricates: it applies only the exact, deterministic transformation
+        the operator names, and returns '' when it can't be done confidently so
+        the caller shows PIT's textual description instead."""
+        if not line:
+            return ""
+        d = (desc or "").lower()
+        def swap_once(a, b):
+            return line.replace(a, b, 1) if line.count(a) == 1 else ""
+        for a, b, fa, fb in [
+            ("addition", "subtraction", "+", "-"),
+            ("subtraction", "addition", "-", "+"),
+            ("multiplication", "division", "*", "/"),
+            ("division", "multiplication", "/", "*"),
+            ("modulus", "multiplication", "%", "*"),
+        ]:
+            if a in d and b in d:
+                r = swap_once(fa, fb)
+                if r:
+                    return r
+        if "negated conditional" in d:
+            for a, b in [("==", "!="), ("!=", "=="), ("<=", ">"),
+                         (">=", "<"), ("<", ">="), (">", "<=")]:
+                r = swap_once(a, b)
+                if r:
+                    return r
+        import re as _re
+        if "boolean return with true" in d:
+            return _re.sub(r"return\b.*?;", "return true;", line, count=1)
+        if "boolean return with false" in d:
+            return _re.sub(r"return\b.*?;", "return false;", line, count=1)
+        if "with null" in d and "return" in line:
+            return _re.sub(r"return\b.*?;", "return null;", line, count=1)
+        return ""
+
     def _parse_results(self) -> List[Mutant]:
         report = self._find_report()
         if not report:
@@ -646,7 +684,11 @@ class PITAdapter:
                 # code and PIT's description as the change applied. Otherwise fall
                 # back to the prior description-only representation.
                 original = original_line or desc
-                mutated  = desc if original_line else f"[{mutator_class}] {desc}"
+                if original_line:
+                    _recon = self._reconstruct_mutated(original_line, desc)
+                    mutated = _recon if (_recon and _recon != original_line) else desc
+                else:
+                    mutated = f"[{mutator_class}] {desc}"
 
                 # Stage 4 coverage proxy: use killingTest + mutatedMethod
                 # PIT doesn't expose full coverage sets, but killingTest +
@@ -667,6 +709,7 @@ class PITAdapter:
                     test_coverage=test_coverage,
                 )
                 mutant.status = status
+                mutant.killing_test = killing_test or None
                 mutants.append(mutant)
             except Exception as e:
                 log.debug("Skipping malformed mutation element: %s", e)
