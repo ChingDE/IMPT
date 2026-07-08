@@ -44,13 +44,16 @@ async def list_foss(c, base, tok):
     r.raise_for_status()
     return r.json()
 
-async def run_one(c, base, tok, fp, budget, timeout):
-    """Create + run an exhaustive session for one FOSS project. Returns a result dict."""
+async def run_one(c, base, auth, refresh, fp, budget, timeout):
+    """Create + run an exhaustive session for one FOSS project. Returns a result dict.
+    `auth` is a mutable {"tok": ...}; `refresh` re-logins and updates it (the token
+    expires in ~60min, but a big Java project can run for hours)."""
+    def H(): return hdr(auth["tok"])
     slug = fp.get("slug") or fp.get("name")
     lang = fp.get("language", "java")
     name = f"exhaustive {slug}"
     # 1) create session bound to the FOSS project
-    r = await c.post(f"{base}/api/sessions", headers=hdr(tok), json={
+    r = await c.post(f"{base}/api/sessions", headers=H(), json={
         "name": name, "language": lang, "foss_project_id": fp["id"],
     })
     if r.status_code >= 300:
@@ -59,11 +62,11 @@ async def run_one(c, base, tok, fp, budget, timeout):
     # 2) select ALL operators (exhaustive keeps the full set)
     all_ops = ["AOR","ROR","ABS","COR","LCR","SOR","UOI","SDL","VDL","ODL",
                "CRP","NULL_RETURN","NEGATE_RETURN"]
-    await c.post(f"{base}/api/sessions/{sid}/operators", headers=hdr(tok),
+    await c.post(f"{base}/api/sessions/{sid}/operators", headers=H(),
                  json={"selected_operators": all_ops})
     # 3) budget: exhaustive strategy + run_exhaustive so the ground-truth
     #    baseline (and the Java mutant cache) are written
-    await c.post(f"{base}/api/sessions/{sid}/budget", headers=hdr(tok), json={
+    await c.post(f"{base}/api/sessions/{sid}/budget", headers=H(), json={
         "time_budget_minutes": budget,
         "selected_strategy":   "exhaustive",
         "run_exhaustive":      True,
@@ -71,14 +74,17 @@ async def run_one(c, base, tok, fp, budget, timeout):
         "run_operator_based":  False,
     })
     # 4) start
-    r = await c.post(f"{base}/api/sessions/{sid}/start", headers=hdr(tok))
+    r = await c.post(f"{base}/api/sessions/{sid}/start", headers=H())
     if r.status_code >= 300:
         return {"slug": slug, "ok": False, "sid": sid, "reason": f"start {r.status_code}"}
     # 5) poll until the session completes/fails
     t0 = time.time()
     while time.time() - t0 < timeout:
         await asyncio.sleep(10)
-        rs = await c.get(f"{base}/api/sessions/{sid}", headers=hdr(tok))
+        rs = await c.get(f"{base}/api/sessions/{sid}", headers=H())
+        if rs.status_code == 401:      # token expired during a long run -> refresh
+            await refresh()
+            continue
         if rs.status_code >= 300:
             continue
         s = rs.json()
@@ -110,8 +116,10 @@ async def main():
     want = {s.strip() for s in a.projects.split(",") if s.strip()}
 
     async with httpx.AsyncClient(timeout=60.0) as c:
-        tok = await login(c, base, a.email, a.password)
-        foss = await list_foss(c, base, tok)
+        auth = {"tok": await login(c, base, a.email, a.password)}
+        async def refresh():
+            auth["tok"] = await login(c, base, a.email, a.password)
+        foss = await list_foss(c, base, auth["tok"])
         if want:
             foss = [f for f in foss if (f.get("slug") or f.get("name")) in want]
         print(f"Running exhaustive on {len(foss)} FOSS projects (budget={a.budget}m, "
@@ -123,7 +131,8 @@ async def main():
             slug = fp.get("slug") or fp.get("name")
             print(f"[{i}/{len(foss)}] {slug} ({fp.get('language')}) …", flush=True)
             try:
-                res = await run_one(c, base, tok, fp, a.budget, a.timeout)
+                await refresh()                       # fresh token per project
+                res = await run_one(c, base, auth, refresh, fp, a.budget, a.timeout)
             except Exception as e:  # noqa: BLE001
                 res = {"slug": slug, "ok": False, "reason": f"exception: {e}"}
             results.append(res)
