@@ -322,8 +322,11 @@ async def resend_verification(
                 detail="Too many requests. Please wait before requesting another verification email."
             )
 
-    # Invalidate old tokens and issue a fresh one
-    await verify_repo.invalidate_existing(user.id)
+    # Issue a fresh token. We intentionally do NOT invalidate previously emailed
+    # verification tokens: a respondent may open an earlier verification email, and
+    # invalidating it would make that still-unexpired link fail (the bug this fixes).
+    # All unexpired verification tokens remain valid; they are single-use and expire
+    # in 24h, which is acceptable for email verification.
     token = generate_secure_token()
     expires_at = datetime.utcnow() + timedelta(hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS)
     new_token = await verify_repo.create(user.id, token, expires_at)
