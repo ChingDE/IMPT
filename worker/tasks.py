@@ -532,6 +532,18 @@ def _run_engine(job_id: str, config: dict) -> dict:
         for m in result.executed_mutants
     ]
 
+    # Cache JS FOSS exhaustive results so the offline comparative sweep can
+    # reconstruct strategies. Java is cached in Phase 1 (PIT gives real statuses
+    # up front); JS statuses only exist after Phase 3, so we cache here. Factors
+    # were enriched in Phase 1, so the cached mutants carry everything the offline
+    # scorer needs. Only for exhaustive runs (all mutants executed = full population).
+    if is_exhaustive and config.get("foss_project_id") and lang == "javascript":
+        try:
+            _cache_foss_mutants(config["foss_project_id"], result.all_mutants,
+                                actual_loc, actual_test_count)
+        except Exception as _exc:
+            log.warning("JS FOSS cache write failed: %s", _exc)
+
     return {
         "total_mutants":              len(result.all_mutants),
         "selected_mutants":           len(result.selected_mutants),
@@ -697,7 +709,8 @@ def _get_all_mutants(config: dict, job_id: str):
 
     # FOSS Java: serve cached exhaustive mutants and skip the long live PIT run.
     _fpid = config.get("foss_project_id")
-    if _fpid and config.get("language", "java").lower() == "java":
+    if (_fpid and config.get("language", "java").lower() == "java"
+            and config.get("strategy") != "exhaustive"):
         _cached = _load_foss_cache(_fpid)
         if _cached is not None:
             _muts, _loc, _tc = _cached
