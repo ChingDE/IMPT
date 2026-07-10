@@ -210,6 +210,17 @@ async def compare_strategies(
     primary_job    = next((j for j in jobs if j.strategy != "exhaustive"), None)
     exhaustive_job = next((j for j in jobs if j.strategy == "exhaustive"), None)
 
+    # Stored ground-truth baseline (from a prior exhaustive run on this FOSS project).
+    # When present, we report REAL exhaustive numbers instead of statistical estimates.
+    stored_baseline = None
+    if exhaustive_job is None and getattr(session, "foss_project_id", None):
+        from db.models.orm_models import ExhaustiveBaseline
+        from sqlalchemy import select as _sel
+        stored_baseline = (await db.execute(
+            _sel(ExhaustiveBaseline).where(
+                ExhaustiveBaseline.project_id == session.foss_project_id))).scalar_one_or_none()
+    has_ground_truth = (exhaustive_job is not None) or (stored_baseline is not None)
+
     # Compute real time-saved against exhaustive if both ran
     def _elapsed(job) -> float:
         if job is None:
@@ -226,6 +237,8 @@ async def compare_strategies(
 
     primary_exec    = _elapsed(primary_job)
     exhaustive_exec = _elapsed(exhaustive_job)
+    if exhaustive_exec == 0 and stored_baseline:
+        exhaustive_exec = float(stored_baseline.execution_time_seconds or 0)
 
     # If exhaustive didn't run (or ran but has 0 time), estimate it:
     # estimated_exhaustive = primary_time × (total / selected)
@@ -245,7 +258,8 @@ async def compare_strategies(
 
     # Compute real correlation if both completed
     primary_score    = (primary_job.mutation_score   or 0) if primary_job   else 0
-    exhaustive_score = (exhaustive_job.mutation_score or 0) if exhaustive_job else 0
+    exhaustive_score = ((exhaustive_job.mutation_score or 0) if exhaustive_job
+                        else (stored_baseline.mutation_score if stored_baseline else 0))
     if primary_score > 0 and exhaustive_score > 0:
         real_correlation = round(1 - abs(primary_score - exhaustive_score) / exhaustive_score, 3)
     else:
@@ -280,6 +294,7 @@ async def compare_strategies(
             # Comparison metrics (computed above using both jobs)
             "time_saved_pct":         real_time_saved if is_primary else 0,
             "real_correlation":       real_correlation if is_primary else None,
+            "ground_truth":           has_ground_truth,
             # Legacy field name
             "estimated_correlation":  round(job.estimated_score or 0, 3),
             "operator_stats":         {},
