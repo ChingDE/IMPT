@@ -295,6 +295,7 @@ async def compare_strategies(
             "time_saved_pct":         real_time_saved if is_primary else 0,
             "real_correlation":       real_correlation if is_primary else None,
             "ground_truth":           has_ground_truth,
+            "exhaustive_score":       exhaustive_score if is_primary else (job.mutation_score or 0),
             # Legacy field name
             "estimated_correlation":  round(job.estimated_score or 0, 3),
             "operator_stats":         {},

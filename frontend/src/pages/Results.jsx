@@ -89,10 +89,13 @@ export default function Results() {
   const imptJob       = primaryJob; // kept for backward-compat refs below
 
   // Baseline: exhaustive if it ran and completed; otherwise use Wilson estimate from primary
-  const hasGroundTruth  = exhaustiveJob && ['COMPLETED','completed'].includes(exhaustiveJob.status);
-  const baselineScore   = hasGroundTruth
+  const exhaustiveRan   = exhaustiveJob && ['COMPLETED','completed'].includes(exhaustiveJob.status);
+  const hasGroundTruth  = exhaustiveRan || primaryJob?.ground_truth === true;  // stored baseline counts
+  const baselineScore   = exhaustiveRan
     ? exhaustiveJob.mutation_score
-    : (primaryJob?.estimated_score ?? primaryJob?.mutation_score ?? 0);
+    : (primaryJob?.ground_truth
+        ? (primaryJob?.exhaustive_score ?? 0)
+        : (primaryJob?.estimated_score ?? primaryJob?.mutation_score ?? 0));
   const baselineLabel   = hasGroundTruth ? 'Ground Truth' : 'Estimated';
   const baselineColor   = hasGroundTruth ? 'var(--green)' : 'var(--amber)';
 
