@@ -1,7 +1,7 @@
 // src/pages/Running.jsx  FR097-FR106
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getSession, getSessionJobs, stopTesting } from '../api/client';
+import { getSession, getSessionJobs, stopTesting, stopExhaustive } from '../api/client';
 import { AppShell, PageHeader, Alert } from '../components/UI';
 
 const STRATEGY_LABEL = { impt: '⭐ IMPT Intelligent', random: 'Random Sampling', operator_based: 'Operator-Based' };
@@ -215,6 +215,9 @@ export default function Running() {
   const primaryJobsDone = jobs.filter(j => j.strategy !== 'exhaustive');
   const primaryDone = primaryJobsDone.length > 0 &&
     primaryJobsDone.every(j => ['COMPLETED','FAILED','CANCELLED'].includes((j.status || '').toUpperCase()));
+  const _exhaustiveJobR = jobs.find(j => j.strategy === 'exhaustive');
+  const exhaustiveRunning = !!_exhaustiveJobR &&
+    !['COMPLETED','FAILED','CANCELLED'].includes((_exhaustiveJobR.status || '').toUpperCase()) && primaryDone;
   const budget       = session?.time_budget_minutes ? session.time_budget_minutes * 60 : 1200;
   const isJava       = session?.language === 'java';
   const totalMutants = impt?.total_mutants || session?.estimated_mutant_count || 0;
@@ -270,13 +273,19 @@ export default function Running() {
             </div>
             <div style={{ background:'var(--gray-200)', height:20, borderRadius:10, overflow:'hidden', marginBottom:8 }}>
               <div style={{
-                width:`${pct}%`, height:'100%', background:'var(--green)',
+                width:`${exhaustiveRunning ? 100 : pct}%`, height:'100%',
+                background: exhaustiveRunning ? 'var(--gray-400)' : 'var(--green)',
                 borderRadius:10, transition:'width .8s',
               }} />
             </div>
-            <div style={{ fontSize:32, fontWeight:800, color:'var(--green)', textAlign:'center', letterSpacing:-1, marginBottom:4 }}>
-              {pct}% Complete
+            <div style={{ fontSize:32, fontWeight:800, color: exhaustiveRunning ? 'var(--gray-400)' : 'var(--green)', textAlign:'center', letterSpacing:-1, marginBottom:4 }}>
+              {exhaustiveRunning ? 100 : pct}% Complete
             </div>
+            {exhaustiveRunning ? (
+              <div style={{ textAlign:'center', fontSize:13, color:'var(--gray-500)', fontStyle:'italic' }}>
+                Primary run complete — now running the exhaustive baseline for ground-truth comparison…
+              </div>
+            ) : (
             <div style={{ display:'flex', justifyContent:'space-between', fontSize:12.5, color:'var(--gray-500)' }}>
               {/* Mutant count display — FR requirement: show x of y */}
               <span>
@@ -291,6 +300,7 @@ export default function Running() {
                 ? 'PIT analyzes the full project — time depends on project size'
                 : `~${Math.floor(remaining/60)}m ${remaining%60}s remaining`}</span>
             </div>
+            )}
           </div>
 
           {/* FR098 — Phase indicator */}
@@ -427,7 +437,16 @@ export default function Running() {
             <button className="btn btn-dark" disabled={!primaryDone}
               title={primaryDone ? 'View results' : 'Available once testing completes'}
               style={!primaryDone ? { opacity:0.5, cursor:'not-allowed' } : undefined}
-              onClick={() => { if (primaryDone) nav(`/results/${sessionId}`); }}>
+              onClick={() => {
+                if (!primaryDone) return;
+                if (exhaustiveRunning) {
+                  if (window.confirm('Viewing results now will TERMINATE the exhaustive baseline run, and you will be shown ESTIMATED metrics instead of ground truth. Proceed?')) {
+                    stopExhaustive(sessionId).catch(() => {}).finally(() => nav(`/results/${sessionId}`));
+                  }
+                } else {
+                  nav(`/results/${sessionId}`);
+                }
+              }}>
               View Results
             </button>
           </div>

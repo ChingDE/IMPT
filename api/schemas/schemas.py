@@ -183,6 +183,7 @@ class SessionOut(BaseModel):
     run_exhaustive: bool = False
     foss_project_id: Optional[str] = None
     project_name: Optional[str] = None
+    has_baseline: Optional[bool] = False
     mutation_score: Optional[float] = None
     executed_mutants: Optional[int] = None
     total_mutants: Optional[int] = None

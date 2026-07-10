@@ -143,6 +143,20 @@ async def get_session(
             if d.get("loc") is None:        d["loc"]        = fp.loc
             if d.get("file_count") is None: d["file_count"] = fp.file_count
             if d.get("test_count") is None: d["test_count"] = fp.test_count
+            from db.models.orm_models import ExhaustiveBaseline
+            _b = (await db.execute(_sel(ExhaustiveBaseline.id).where(
+                ExhaustiveBaseline.project_id == session.foss_project_id))).first()
+            d["has_baseline"] = _b is not None
+    # Attach the session's job metrics so API pollers/scripts see the real score
+    from db.repositories.repositories import JobRepository
+    _jobs = await JobRepository(db).get_user_jobs(current_user.id)
+    _done = [j for j in _jobs if j.session_id == session_id and j.status == "COMPLETED"]
+    _job = next((j for j in _done if j.strategy != "exhaustive"), None) or (_done[0] if _done else None)
+    if _job:
+        d["mutation_score"]   = round((_job.mutation_score or 0) * 100, 1)
+        d["executed_mutants"] = _job.executed_mutants or 0
+        d["total_mutants"]    = _job.total_mutants or 0
+        d["time_saved_pct"]   = round(_job.time_saved_pct or 0, 1)
     return d
 
 
@@ -681,6 +695,47 @@ async def stop_testing(
     await db.commit()
 
     return {"message": "Testing stopped."}
+
+
+@router.post("/{session_id}/stop-exhaustive")
+async def stop_exhaustive(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Terminate ONLY the exhaustive baseline job, leaving the completed primary
+    results intact. Used when the user opts to view results early (accepting
+    estimated metrics) instead of waiting for ground truth."""
+    from db.repositories.repositories import JobRepository
+    repo     = TestSessionRepository(db)
+    job_repo = JobRepository(db)
+    session  = await repo.get_by_id(session_id)
+    if not session or session.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    jobs   = await job_repo.get_session_jobs(session_id)
+    active = [j for j in jobs if j.strategy == "exhaustive"
+              and (j.status or "").upper() in ("PENDING", "RUNNING")]
+    try:
+        from worker.celery_app import celery_app, CELERY_AVAILABLE
+        if CELERY_AVAILABLE and celery_app:
+            for j in active:
+                if j.celery_task_id and j.celery_task_id != "sync":
+                    try:
+                        celery_app.control.revoke(j.celery_task_id, terminate=True, signal="SIGTERM")
+                    except Exception as exc:
+                        log.warning("Revoke failed for exhaustive task %s: %s", j.celery_task_id, exc)
+    except Exception as exc:
+        log.warning("Celery revoke unavailable: %s", exc)
+
+    now = datetime.utcnow()
+    for j in active:
+        j.status        = "CANCELLED"
+        j.error_message = "Exhaustive terminated by user (viewed results early)"
+        j.completed_at  = now
+        db.add(j)
+    await db.commit()
+    return {"message": "Exhaustive baseline terminated.", "cancelled": len(active)}
 
 
 # ── Shareable link ─────────────────────────────────────────────────────────────

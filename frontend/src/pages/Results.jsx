@@ -326,12 +326,6 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
           </div>
         )}
 
-        {/* Exhaustive job still running notice */}
-        {exhaustiveJob && exhaustiveJob.status?.toUpperCase() !== 'COMPLETED' && (
-          <Alert type="warn">
-            ⏳ Exhaustive baseline is still running ({exhaustiveJob.status}). Refresh to update ground-truth figures.
-          </Alert>
-        )}
 
         {/* Collapsible explanation */}
         <div className="card mb-4">

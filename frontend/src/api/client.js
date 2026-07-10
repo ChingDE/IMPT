@@ -104,3 +104,5 @@ export const githubDisconnect   = ()            => client.delete('/api/github/di
 export const listGithubRepos    = (query='', page=1) => client.get('/api/github/repos', { params: { query, page } }).then(r => r.data);
 export const listGithubBranches = (owner, repo) => client.get(`/api/github/repos/${owner}/${repo}/branches`).then(r => r.data);
 export const importGithubRepo   = (sessionId, body) => client.post(`/api/github/import/${sessionId}`, body).then(r => r.data);
+
+export const stopExhaustive     = (sessionId)   => client.post(`/api/sessions/${sessionId}/stop-exhaustive`).then(r => r.data);

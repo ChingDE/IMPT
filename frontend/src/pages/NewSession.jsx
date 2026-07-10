@@ -851,6 +851,11 @@ export function NewSessionBudget() {
                 ))}
               </div>
 
+              {session?.has_baseline ? (
+                <div className="mt-4" style={{background:'var(--green-xlight, #ECFDF5)',border:'1px solid var(--green-light, #A7F3D0)',borderRadius:8,padding:'12px 14px',fontSize:12.5,color:'var(--gray-700)',lineHeight:1.55}}>
+                  ✓ A <strong>ground-truth exhaustive baseline</strong> already exists for this project. Your results will show real correlation and time-saved against it — no need to re-run exhaustive testing.
+                </div>
+              ) : (<>
               {/* Exhaustive baseline checkbox */}
               <div className="mt-4" style={{background:'var(--amber-light)',border:'1px solid #FDE68A',borderRadius:8,padding:'12px 14px'}}>
                 <label className="form-check" style={{fontWeight:600}}>
@@ -867,6 +872,7 @@ export function NewSessionBudget() {
                   </div>
                 )}
               </div>
+              </>)}
 
               {/* FR088 — Recommendations */}
               <div className="mt-4">
