@@ -79,12 +79,12 @@ def _slice_source(source: str, loc: dict) -> str:
 # Keys are the FOSS project directory name. Any field omitted falls back to
 # auto-detection. `build_command` runs once to (re)build before tests.
 PROJECT_OVERRIDES = {
-    # "ramda": {
-    #     "test_runner":  "command",
-    #     "test_command": "npm run spec",        # = mocha --require @babel/register
-    #     "src_pattern":  "source/**/*.js",
-    #     "build_command": "npm run build:cjs",  # rebuild source -> src for the tests
-    # },
+    "ramda": {
+        "test_runner":  "command",
+        "test_command": "npm run spec",        # = mocha --require @babel/register
+        "src_pattern":  "source/**/*.js",
+        "build_command": "npm run build:cjs",  # rebuild source -> src for the tests
+    },
     # "semver": {"test_runner": "command", "test_command": "node_modules/.bin/tap"},
     # "zod":   {"test_runner": "command", "test_command": "node_modules/.bin/vitest run",
     #           "src_pattern": "src/**/*.ts"},
