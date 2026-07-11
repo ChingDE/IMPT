@@ -85,11 +85,11 @@ PROJECT_OVERRIDES = {
         "src_pattern":  "source/**/*.js",
         "build_command": "npm run build:cjs",  # rebuild source -> src for the tests
     },
-    # "semver": {"test_runner": "command", "test_command": "node_modules/.bin/tap"},
-    # "zod":   {"test_runner": "command", "test_command": "node_modules/.bin/vitest run",
-    #           "src_pattern": "src/**/*.ts"},
-    # "axios": {"test_runner": "command", "test_command": "npm test",
-    #           "src_pattern": "lib/**/*.js"},
+    "semver": {"test_runner": "command", "test_command": "node_modules/.bin/tap"},
+    "zod":   {"test_runner": "command", "test_command": "node_modules/.bin/vitest run",
+              "src_pattern": "src/**/*.ts"},
+    "axios": {"test_runner": "command", "test_command": "npm test",
+              "src_pattern": "lib/**/*.js"},
 }
 
 
