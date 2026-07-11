@@ -539,7 +539,13 @@ def _run_engine(job_id: str, config: dict) -> dict:
     # scorer needs. Only for exhaustive runs (all mutants executed = full population).
     if is_exhaustive and config.get("foss_project_id") and lang == "javascript":
         try:
-            _cache_foss_mutants(config["foss_project_id"], result.all_mutants,
+            # Cache the EXECUTED mutants: these carry the real Phase-3 statuses
+            # (the same population the stored mutation_score is computed from) AND
+            # the factors enriched in Phase 1. Pin real_status so the serializer
+            # reads the executed status, not any stale Phase-1 value.
+            for _m in result.executed_mutants:
+                _m.real_status = _m.status
+            _cache_foss_mutants(config["foss_project_id"], result.executed_mutants,
                                 actual_loc, actual_test_count)
         except Exception as _exc:
             log.warning("JS FOSS cache write failed: %s", _exc)
