@@ -71,6 +71,28 @@ def _slice_source(source: str, loc: dict) -> str:
         return ""
 
 
+# ── Per-project Stryker overrides ────────────────────────────────────────────
+# Auto-detection fails on projects whose tests need a build step or a specific
+# runner (e.g. ramda: mocha+babel with a source->src transpile; semver: tap;
+# zod/axios: TypeScript). Fill an entry per project, then verify on a CHEAP
+# non-exhaustive run (score must be non-zero) BEFORE paying for exhaustive.
+# Keys are the FOSS project directory name. Any field omitted falls back to
+# auto-detection. `build_command` runs once to (re)build before tests.
+PROJECT_OVERRIDES = {
+    # "ramda": {
+    #     "test_runner":  "command",
+    #     "test_command": "npm run spec",        # = mocha --require @babel/register
+    #     "src_pattern":  "source/**/*.js",
+    #     "build_command": "npm run build:cjs",  # rebuild source -> src for the tests
+    # },
+    # "semver": {"test_runner": "command", "test_command": "node_modules/.bin/tap"},
+    # "zod":   {"test_runner": "command", "test_command": "node_modules/.bin/vitest run",
+    #           "src_pattern": "src/**/*.ts"},
+    # "axios": {"test_runner": "command", "test_command": "npm test",
+    #           "src_pattern": "lib/**/*.js"},
+}
+
+
 class StrykerAdapter:
     def __init__(self, project_dir: Path, use_docker: bool = True,
                  sandbox_image: str = "impt-sandbox:latest",
@@ -112,6 +134,19 @@ class StrykerAdapter:
                 shutil.copytree(str(project_dir), str(work_dir), symlinks=False)
             else:
                 log.info("Using existing writable workdir: %s", work_dir)
+                # Clear root-owned leftovers the sandbox wrote as root (stale
+                # reports/target/.stryker-tmp) via a privileged docker run, so the
+                # non-root worker isn't blocked. Ends the recurring
+                # 'Permission denied ... reports/mutation.json' failure class.
+                import subprocess as _sp, os as _os
+                _ht = _os.environ.get("HOST_TMP_PATH", "/home/imptuser/impt/foss-tmp")
+                try:
+                    _sp.run(["docker", "run", "--rm", "-v", f"{_ht}/{work_dir.name}:/w",
+                             "impt-sandbox:latest", "sh", "-c",
+                             "rm -rf /w/reports /w/.stryker-tmp /w/target"],
+                            check=False, timeout=120, capture_output=True)
+                except Exception as _exc:
+                    log.warning("Workdir pre-clean failed for %s: %s", work_dir.name, _exc)
             return work_dir
 
     def run(self) -> List[Mutant]:
@@ -451,6 +486,17 @@ class StrykerAdapter:
             "!babel.config.*", "!webpack.config.*",
         ]
 
+        # Per-project override (see PROJECT_OVERRIDES at top of module)
+        _ov = PROJECT_OVERRIDES.get(self.project_dir.name)
+        if _ov:
+            test_runner  = _ov.get("test_runner", test_runner)
+            test_command = _ov.get("test_command", test_command)
+            src_pattern  = _ov.get("src_pattern", src_pattern)
+            self._build_command = _ov.get("build_command")
+            log.info("Applied Stryker override for %s: runner=%s cmd=%r src=%s build=%r",
+                     self.project_dir.name, test_runner, test_command, src_pattern,
+                     getattr(self, "_build_command", None))
+
         return test_runner, test_command, is_esm, src_pattern, EXCLUDE_PATTERNS
 
     def _build_enum_config(self, src_pattern: str, excludes: list = None) -> str:
@@ -506,11 +552,16 @@ class StrykerAdapter:
                 "  commandRunner: { command: '" + test_command + "' },"
             )
 
+        _bc = getattr(self, "_build_command", None)
+        _build_line = ("  buildCommand: '" + _bc + "',") if _bc else None
         lines = [
             "/** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */",
             "module.exports = {",
             "  reporters: ['json', 'progress'],",
-            runner,
+            runner,]
+        if _build_line:
+            lines.append(_build_line)
+        lines += [
             "  timeoutMS: 60000,",
             "  timeoutFactor: 3,",
             "  mutate: [",
