@@ -185,6 +185,89 @@ async def reports_stats(
     }
 
 
+@router.get("/cost")
+async def cost_analysis(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cost Analysis: measured execution time, CPU utilization, memory consumption,
+    and storage usage across the user's completed runs, plus the estimated testing
+    cost saved versus exhaustive mutation testing and the percentage reduction.
+
+    Cost model (transparent, not a black box): the sandbox allocates a fixed
+    2 vCPU / 2 GB container per run, so compute cost is charged on wall-clock
+    machine time at COST_PER_HOUR_USD (default $0.09/h, the DigitalOcean droplet
+    rate). Exhaustive cost is projected from the measured run at the same rate,
+    scaled by total/executed mutants — the same basis used for time-saved.
+    """
+    import os
+    RATE = float(os.getenv("COST_PER_HOUR_USD", "0.09"))
+    VCPU = float(os.getenv("SANDBOX_VCPU", "2"))
+
+    job_repo = JobRepository(db)
+    jobs     = await job_repo.get_user_jobs(current_user.id)
+    completed = [j for j in jobs if j.status == "COMPLETED" and j.strategy != "exhaustive"]
+
+    def _elapsed(j):
+        if j.started_at and j.completed_at:
+            s = (j.completed_at - j.started_at).total_seconds()
+            if s > 0:
+                return s
+        return float(j.execution_time_seconds or 0)
+
+    actual_secs = est_exhaustive_secs = 0.0
+    cpu_secs_total = 0.0
+    cpu_jobs = 0
+    peak_mem = 0.0
+    storage  = 0.0
+    util_samples = []
+
+    for j in completed:
+        el = _elapsed(j)
+        actual_secs += el
+        # Projected exhaustive time for the same job (all mutants at the same rate)
+        if el > 0 and (j.executed_mutants or 0) > 0 and (j.total_mutants or 0) > 0:
+            est_exhaustive_secs += el * (j.total_mutants / j.executed_mutants)
+        else:
+            est_exhaustive_secs += el
+        if j.cpu_seconds is not None:
+            cpu_secs_total += float(j.cpu_seconds)
+            cpu_jobs += 1
+            if el > 0:
+                # utilization = CPU-seconds / (wall seconds x vCPUs allocated)
+                util_samples.append(min(100.0, (float(j.cpu_seconds) / (el * VCPU)) * 100.0))
+        if j.peak_memory_mb is not None:
+            peak_mem = max(peak_mem, float(j.peak_memory_mb))
+        if j.storage_mb is not None:
+            storage += float(j.storage_mb)
+
+    actual_cost = (actual_secs / 3600.0) * RATE
+    exhaustive_cost = (est_exhaustive_secs / 3600.0) * RATE
+    saved_cost = max(0.0, exhaustive_cost - actual_cost)
+    pct_reduction = (round((1 - actual_secs / est_exhaustive_secs) * 100, 1)
+                     if est_exhaustive_secs > 0 else 0.0)
+    avg_util = round(sum(util_samples) / len(util_samples), 1) if util_samples else None
+
+    return {
+        "jobs_measured":        len(completed),
+        "jobs_with_resources":  cpu_jobs,   # 0 for runs made before cost tracking
+        # Execution time
+        "execution_time_secs":       round(actual_secs),
+        "exhaustive_time_secs_est":  round(est_exhaustive_secs),
+        # Resource usage (measured; None when no instrumented runs yet)
+        "cpu_seconds":         round(cpu_secs_total, 1) if cpu_jobs else None,
+        "cpu_utilization_pct": avg_util,
+        "peak_memory_mb":      round(peak_mem, 1) if peak_mem else None,
+        "storage_mb":          round(storage, 1) if storage else None,
+        # Cost
+        "cost_per_hour_usd":   RATE,
+        "actual_cost_usd":     round(actual_cost, 4),
+        "exhaustive_cost_usd": round(exhaustive_cost, 4),
+        "cost_saved_usd":      round(saved_cost, 4),
+        "pct_reduction":       pct_reduction,
+    }
+
+
 @router.get("/compare/{session_id}")
 async def compare_strategies(
     session_id: str,

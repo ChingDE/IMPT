@@ -247,6 +247,10 @@ class MutationJob(Base):
     time_saved_pct: Mapped[float]    = mapped_column(Float, default=0.0)
     subsumption_reduction_pct: Mapped[float] = mapped_column(Float, default=0.0)
     execution_time_seconds: Mapped[float]    = mapped_column(Float, default=0.0)
+    # Cost analysis (measured during the run; NULL for jobs run before this feature)
+    cpu_seconds:      Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    peak_memory_mb:   Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    storage_mb:       Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     result_json: Mapped[Optional[str]]       = mapped_column(Text, nullable=True)  # JSON
 
     # Timestamps

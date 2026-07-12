@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { listSessions, deleteSession, getDashboardStats, getTrend } from '../api/client';
+import { listSessions, deleteSession, getDashboardStats, getTrend, getCostAnalysis } from '../api/client';
 
 const STEPS = [
   {
@@ -99,12 +99,13 @@ export default function Dashboard() {
   const [sessions, setSessions]   = useState([]);
   const [stats, setStats]         = useState(null);
   const [trend, setTrend]         = useState([]);
+  const [cost, setCost]           = useState(null);
   const [loading, setLoading]     = useState(true);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => {
-    Promise.all([listSessions(), getDashboardStats(), getTrend()])
-      .then(([s, st, tr]) => { setSessions(s || []); setStats(st); setTrend(tr || []); })
+    Promise.all([listSessions(), getDashboardStats(), getTrend(), getCostAnalysis().catch(() => null)])
+      .then(([s, st, tr, co]) => { setSessions(s || []); setStats(st); setTrend(tr || []); setCost(co); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -225,6 +226,78 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+
+        {/* Cost Analysis — FR: execution time, CPU, memory, storage, cost savings, % reduction */}
+        {cost && cost.jobs_measured > 0 && (
+          <div className="card mb-4">
+            <div className="card-title">💰 Cost Analysis</div>
+            <p style={{ fontSize:12.5, color:'var(--gray-500)', marginTop:-6, marginBottom:14, lineHeight:1.6 }}>
+              Measured across {cost.jobs_measured} completed run{cost.jobs_measured === 1 ? '' : 's'}.
+              Compute is billed at ${cost.cost_per_hour_usd}/hour for the sandboxed runner;
+              exhaustive cost is projected from the measured run rate over the full mutant population.
+            </p>
+
+            <div className="grid-3 mb-3">
+              <div className="stat-card green">
+                <div className="stat-label">Estimated Cost Saved</div>
+                <div className="stat-value" style={{ fontSize:22 }}>${cost.cost_saved_usd.toFixed(4)}</div>
+                <div className="stat-delta text-green">
+                  ${cost.actual_cost_usd.toFixed(4)} spent vs ${cost.exhaustive_cost_usd.toFixed(4)} exhaustive
+                </div>
+              </div>
+              <div className="stat-card purple">
+                <div className="stat-label">Reduction Achieved</div>
+                <div className="stat-value">{cost.pct_reduction}%</div>
+                <div className="stat-delta">vs exhaustive mutation testing</div>
+              </div>
+              <div className="stat-card blue">
+                <div className="stat-label">Execution Time</div>
+                <div className="stat-value" style={{ fontSize:22 }}>
+                  {Math.floor(cost.execution_time_secs / 60)}m {cost.execution_time_secs % 60}s
+                </div>
+                <div className="stat-delta text-blue">
+                  vs ~{Math.round(cost.exhaustive_time_secs_est / 60)}m exhaustive (est.)
+                </div>
+              </div>
+            </div>
+
+            <table className="data-table">
+              <thead>
+                <tr><th>Resource Metric</th><th>Measured Value</th><th>Basis</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="bold">Execution Time</td>
+                  <td>{cost.execution_time_secs}s</td>
+                  <td className="text-muted text-sm">Wall-clock, from job start/completion timestamps</td>
+                </tr>
+                <tr>
+                  <td className="bold">CPU Utilization</td>
+                  <td>{cost.cpu_utilization_pct != null
+                        ? `${cost.cpu_utilization_pct}% (${cost.cpu_seconds}s CPU time)` : '—'}</td>
+                  <td className="text-muted text-sm">CPU-seconds of the mutation-framework processes ÷ allocated vCPUs</td>
+                </tr>
+                <tr>
+                  <td className="bold">Memory Consumption</td>
+                  <td>{cost.peak_memory_mb != null ? `${cost.peak_memory_mb} MB peak` : '—'}</td>
+                  <td className="text-muted text-sm">Peak resident set size during mutation execution</td>
+                </tr>
+                <tr>
+                  <td className="bold">Storage Usage</td>
+                  <td>{cost.storage_mb != null ? `${cost.storage_mb} MB` : '—'}</td>
+                  <td className="text-muted text-sm">Project workdir footprint (sources, build output, reports)</td>
+                </tr>
+              </tbody>
+            </table>
+
+            {cost.jobs_with_resources === 0 && (
+              <Alert type="info">
+                Resource metrics (CPU, memory, storage) are captured for runs executed after cost
+                tracking was enabled. Run a new session to populate them.
+              </Alert>
+            )}
+          </div>
+        )}
 
         {/* Performance trend */}
         <div className="card">

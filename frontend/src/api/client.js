@@ -106,3 +106,5 @@ export const listGithubBranches = (owner, repo) => client.get(`/api/github/repos
 export const importGithubRepo   = (sessionId, body) => client.post(`/api/github/import/${sessionId}`, body).then(r => r.data);
 
 export const stopExhaustive     = (sessionId)   => client.post(`/api/sessions/${sessionId}/stop-exhaustive`).then(r => r.data);
+
+export const getCostAnalysis    = ()            => client.get('/api/analytics/cost').then(r => r.data);

@@ -164,7 +164,8 @@ def _mark_completed_sync(job_id: str, result: dict, records: list) -> None:
                     mutation_score=:score, estimated_score=:est,
                     ci_lower=:cil, ci_upper=:ciu,
                     time_saved_pct=:tsp, subsumption_reduction_pct=:srp,
-                    execution_time_seconds=:ets, result_json=:rj
+                    execution_time_seconds=:ets, result_json=:rj,
+                    cpu_seconds=:cpus, peak_memory_mb=:pmem, storage_mb=:stor
                 WHERE id=:jid AND status != 'CANCELLED'
             """), {
                 "now": datetime.utcnow(),
@@ -179,6 +180,9 @@ def _mark_completed_sync(job_id: str, result: dict, records: list) -> None:
                 "tsp":      result.get("time_saved_pct", 0.0),
                 "srp":      result.get("subsumption_reduction_pct", 0.0),
                 "ets":      result.get("execution_time_seconds", 0.0),
+                "cpus":     result.get("cpu_seconds"),
+                "pmem":     result.get("peak_memory_mb"),
+                "stor":     result.get("storage_mb"),
                 "rj":       json.dumps(result.get("result_json", {})),
                 "jid":      job_id,
             })
@@ -309,6 +313,51 @@ def _operator_based_select(mutants, budget_seconds, op_multipliers):
     return out or ranked[:1]
 
 
+def _measure_resources_start():
+    """Snapshot child-process CPU time. The mutation frameworks (PIT/Stryker) run
+    as child `docker run` processes, so RUSAGE_CHILDREN captures their real CPU
+    and peak-memory usage. Returns (cpu_seconds, peak_rss_kb)."""
+    try:
+        import resource
+        r = resource.getrusage(resource.RUSAGE_CHILDREN)
+        return (r.ru_utime + r.ru_stime), r.ru_maxrss
+    except Exception:
+        return 0.0, 0
+
+
+def _measure_resources_end(start):
+    """Return (cpu_seconds_used, peak_memory_mb) since the start snapshot."""
+    try:
+        import resource, sys
+        r = resource.getrusage(resource.RUSAGE_CHILDREN)
+        cpu = max(0.0, (r.ru_utime + r.ru_stime) - start[0])
+        # ru_maxrss is KB on Linux, bytes on macOS
+        peak_kb = max(r.ru_maxrss, start[1])
+        peak_mb = peak_kb / 1024.0 if sys.platform != "darwin" else peak_kb / (1024.0 ** 2)
+        return round(cpu, 2), round(peak_mb, 1)
+    except Exception:
+        return None, None
+
+
+def _measure_storage_mb(path) -> float:
+    """Disk footprint of the project workdir (source + build output + reports)."""
+    try:
+        from pathlib import Path as _P
+        total = 0
+        base = _P(str(path))
+        if not base.exists():
+            return None
+        for f in base.rglob("*"):
+            try:
+                if f.is_file():
+                    total += f.stat().st_size
+            except Exception:
+                continue
+        return round(total / (1024.0 ** 2), 1)
+    except Exception:
+        return None
+
+
 def _run_engine(job_id: str, config: dict) -> dict:
     from impt.engine import IMPTEngine, EngineConfig
     from impt.models.project import MutationFramework, Project, ProjectConfig
@@ -316,6 +365,7 @@ def _run_engine(job_id: str, config: dict) -> dict:
     from impt.algorithms.optimization import SelectionStrategy
     import time as _time
     _wall_start = _time.time()
+    _res_start  = _measure_resources_start()   # cost analysis: CPU/memory of child procs
     _session_id = config.get("session_id", "")
     _strategy   = config.get("strategy", "impt")
 
@@ -550,6 +600,11 @@ def _run_engine(job_id: str, config: dict) -> dict:
         except Exception as _exc:
             log.warning("JS FOSS cache write failed: %s", _exc)
 
+    # Cost analysis: real CPU/memory used by the mutation-framework child
+    # processes, and the disk footprint of the project workdir.
+    _cpu_secs, _peak_mb = _measure_resources_end(_res_start)
+    _storage_mb = _measure_storage_mb(upload_path) if upload_path else None
+
     return {
         "total_mutants":              len(result.all_mutants),
         "selected_mutants":           len(result.selected_mutants),
@@ -562,6 +617,10 @@ def _run_engine(job_id: str, config: dict) -> dict:
         "time_saved_pct":             result.time_saved_pct,
         "subsumption_reduction_pct":  result.subsumption_reduction_pct,
         "execution_time_seconds":     round(_time.time() - _wall_start, 1),
+        # Cost analysis — measured, not estimated
+        "cpu_seconds":                _cpu_secs,
+        "peak_memory_mb":             _peak_mb,
+        "storage_mb":                 _storage_mb,
         "result_json":                {"operator_stats": result.operator_stats,
                                        "summary": result.summary()},
         "mutant_records":             records,
