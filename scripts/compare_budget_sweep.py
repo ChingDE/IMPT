@@ -223,6 +223,16 @@ def main():
                 comp_rows.append({"budget_pct": pct, "baseline": base, **r})
 
     os.makedirs(a.out, exist_ok=True)
+    # Per-project raw scores (Appendix F1)
+    with open(os.path.join(a.out, "sweep_rows.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["project", "exhaustive_score", "budget_pct", "impt", "random",
+                    "operator_based", "offutt_sufficient"])
+        for s in valid:
+            for pct in pcts:
+                w.writerow([s, round(gt[s] * 100, 2), pct] +
+                           [round(per[(s, st_, pct)] * 100, 2) for st_ in STRATEGIES])
+
     with open(os.path.join(a.out, "sweep_correlation.csv"), "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(corr_rows[0].keys())); w.writeheader(); w.writerows(corr_rows)
     if comp_rows:
