@@ -39,6 +39,15 @@ except Exception:
     _sp = None
 
 
+
+def _seed(*parts) -> int:
+    """Deterministic seed. Python's built-in hash() is salted per process, so it
+    would make the random/Offutt baselines irreproducible between runs. This uses
+    a stable digest so any re-run of this script yields identical results."""
+    import hashlib
+    return int(hashlib.md5("|".join(map(str, parts)).encode()).hexdigest()[:8], 16)
+
+
 def _sync_url():
     return os.environ.get("DATABASE_URL_SYNC") or \
         os.environ["DATABASE_URL"].replace("+asyncpg", "").replace("+aiosqlite", "")
@@ -175,7 +184,7 @@ def main():
         for frac in fracs:
             k = max(1, round(N * frac))
             for strat in STRATEGIES:
-                sub = _select(strat, muts, k, reducer, mults, seed=hash((pid, frac)))
+                sub = _select(strat, muts, k, reducer, mults, seed=_seed(pid, frac))
                 sc = _score(sub)
                 per[(slug, strat, int(round(frac * 100)))] = (sc if sc is not None else g)
 
