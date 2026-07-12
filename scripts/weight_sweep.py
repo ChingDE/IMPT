@@ -158,6 +158,14 @@ def main():
                          "mean_score": round(sum(means) / len(means), 4),
                          "mean_rank": round(mr, 3)})
 
+    # Per-project raw scores per configuration (Appendix G2)
+    with open(os.path.join(a.out, "weight_per_project.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["budget_pct", "project"] + names)
+        for pct in pcts:
+            for s in valid:
+                w.writerow([pct, s] + [round(score[(s, cn, pct)] * 100, 2) for cn in names])
+
     with open(os.path.join(a.out, "weight_scores.csv"), "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
     with open(os.path.join(a.out, "weight_friedman.csv"), "w", newline="") as f:
