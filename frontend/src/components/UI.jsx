@@ -264,7 +264,7 @@ export function AppShell({ children }) {
       <Sidebar />
       <div className="main-area">
         {/* FR050 — Email verification banner */}
-        {user && !user.is_verified && <VerifyBanner />}
+        {user && !user.is_verified && <VerifyBanner email={user.email} />}
         {children}
       </div>
 
@@ -303,20 +303,23 @@ export function AppShell({ children }) {
 }
 
 // ── Verify Banner ─────────────────────────────────────────────────
-function VerifyBanner() {
+function VerifyBanner({ email }) {
   const [dismissed, setDismissed] = useState(false);
   const [sending, setSending]     = useState(false);
   const [sent, setSent]           = useState(false);
+  const [error, setError]         = useState('');
 
   if (dismissed) return null;
 
   const handleResend = async () => {
-    setSending(true);
+    setSending(true); setError('');
     try {
       const { resendVerification } = await import('../api/client');
-      await resendVerification();
+      await resendVerification(email);   // the endpoint needs the address
       setSent(true);
-    } catch {}
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not resend the email. Please try again.');
+    }
     setSending(false);
   };
 
@@ -328,6 +331,7 @@ function VerifyBanner() {
           ? <span style={{ color: 'var(--green)', fontWeight: 600 }}>✓ Verification email sent!</span>
           : <button onClick={handleResend} disabled={sending}>{sending ? 'Sending…' : 'Resend verification email'}</button>
         }
+        {error && <span style={{ color: 'var(--red)', fontWeight: 600 }}>{error}</span>}
         <button className="dismiss-btn" onClick={() => setDismissed(true)}>×</button>
       </div>
     </div>
