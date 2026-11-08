@@ -17,7 +17,9 @@ settings = get_settings()
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Sliding window rate limiter.
-    NFR008: 100 req/min general, 10 req/min for auth/upload endpoints.
+    NFR008: 100 req/min general, 10 req/min for auth endpoints.
+    Both limits come from settings (RATE_LIMIT_REQUESTS_PER_MINUTE and
+    RATE_LIMIT_AUTH_PER_MINUTE), so they can be raised in .env without a code change.
     """
 
     def __init__(self, app):
@@ -39,7 +41,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         now = time.monotonic()
 
         window_size = 60  # seconds
-        limit = 10 if path in self._tight else settings.RATE_LIMIT_REQUESTS_PER_MINUTE
+        limit = (settings.RATE_LIMIT_AUTH_PER_MINUTE if path in self._tight
+                 else settings.RATE_LIMIT_REQUESTS_PER_MINUTE)
 
         dq = self._windows[key]
         while dq and dq[0] < now - window_size:

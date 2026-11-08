@@ -94,6 +94,10 @@ class Settings:
     RATE_LIMIT_REQUESTS_PER_MINUTE: int = int(
         os.getenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "100")
     )
+    # Sign-in, registration and password-reset endpoints (NFR008 default: 10)
+    RATE_LIMIT_AUTH_PER_MINUTE: int = int(
+        os.getenv("RATE_LIMIT_AUTH_PER_MINUTE", "10")
+    )
     LOGIN_MAX_ATTEMPTS: int = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
     LOGIN_LOCKOUT_MINUTES: int = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
 
