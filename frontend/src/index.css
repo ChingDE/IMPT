@@ -44,8 +44,8 @@ button{font-family:var(--font);cursor:pointer}
 input,select,textarea{font-family:var(--font)}
 
 /* ── Layout ── */
-.app-shell{display:flex;height:100vh;overflow:hidden}
-.main-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.app-shell{display:flex;height:100vh;height:100dvh;overflow:hidden}
+.main-area{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 .page-content{flex:1;overflow-y:auto;padding:24px}
 
 /* ── Sidebar ── */
@@ -166,8 +166,8 @@ input,select,textarea{font-family:var(--font)}
 .form-hint{font-size:11.5px;margin-top:4px;display:flex;align-items:center;gap:4px}
 .form-hint.err{color:var(--red)}
 .form-hint.ok{color:var(--green)}
-.form-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);cursor:pointer;margin-bottom:8px}
-.form-check input{accent-color:var(--purple-mid);width:14px;height:14px}
+.form-check{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--gray-600);cursor:pointer;margin-bottom:8px;line-height:1.5}
+.form-check input{accent-color:var(--purple-mid);width:16px;height:16px;flex-shrink:0;margin-top:2px}
 .form-row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
 /* ── Buttons ── */
@@ -345,3 +345,79 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
 .summary-row:last-child{border-bottom:none}
 .summary-row .lbl{color:var(--gray-500)}
 .summary-row .val{font-weight:600;color:var(--gray-800)}
+
+/* ── Mobile layout (phones and small tablets) ── */
+.hdr-menu-btn{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;width:36px;height:36px;border-radius:8px;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer}
+.sidebar-close{margin-left:auto;background:none;border:none;color:var(--gray-500);width:36px;height:36px;display:grid;place-items:center;border-radius:8px;cursor:pointer}
+.sidebar-mobile-only{display:none}
+.mobile-nav-backdrop{display:none}
+
+@media (max-width:768px){
+  .hdr-menu-btn{display:inline-flex}
+  .app-sidebar{position:fixed!important;top:0;left:0;bottom:0;z-index:60;width:min(280px,85vw)!important;min-width:0!important;
+    transform:translateX(-105%);transition:transform .22s ease!important;box-shadow:var(--shadow-lg)}
+  .app-sidebar.open{transform:none}
+  .mobile-nav-backdrop{display:block;position:fixed;inset:0;background:rgba(17,24,39,.45);z-index:55}
+  .sidebar-desktop-only{display:none!important}
+  .sidebar-mobile-only{display:flex}
+  .legal-float{display:none!important}
+
+  .page-header{height:auto;min-height:56px;padding:10px 14px;flex-wrap:wrap;gap:8px 10px}
+  .page-header-left{min-width:0;flex:1 1 auto}
+  .page-title{font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .page-header-right{flex-wrap:wrap;gap:6px}
+  .hdr-avatar{display:none}
+  .hdr-btn{padding:6px 10px;font-size:12.5px}
+  .wizard-bar{padding:8px 14px 10px}
+  .page-content{padding:16px 14px 28px}
+  .verify-banner{flex-wrap:wrap;gap:8px;padding:10px 14px}
+  .verify-banner .actions{flex-wrap:wrap}
+}
+
+/* ── Tablets and phones: wide tables scroll sideways inside their card instead of pushing the page ── */
+@media (max-width:1180px){
+  .data-table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+}
+
+/* ── Mobile content: grids, tables, forms, cards ── */
+@media (max-width:768px){
+  .grid-2,.grid-3,.m-stack{grid-template-columns:1fr!important}
+  .grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .form-row-2{grid-template-columns:1fr}
+  .card{padding:16px}
+  .card .card{padding:14px}
+  .stat-card{padding:14px 16px}
+  .stat-value{font-size:24px}
+
+  .data-table th,.data-table td{white-space:nowrap}
+  /* ...except the first column (usually a name), which wraps so more columns fit on screen */
+  .data-table td:first-child{white-space:normal;min-width:150px;max-width:210px}
+
+  /* Button rows wrap instead of running off screen */
+  .page-content .flex.justify-between,.page-content .flex.gap-2,.page-content .flex.gap-3{flex-wrap:wrap}
+  .page-content .flex.justify-between{gap:10px}
+  .page-content .flex.justify-between > .flex{margin-left:auto}
+  .btn-lg{padding:11px 18px;font-size:14.5px}
+
+  .tab-bar{overflow-x:auto;scrollbar-width:none}
+  .tab-btn{white-space:nowrap;flex-shrink:0}
+  .tab-pills{max-width:100%;overflow-x:auto}
+  .summary-row{gap:12px;align-items:flex-start}
+  .summary-row .val{text-align:right;min-width:0;overflow-wrap:anywhere}
+  .danger-row{flex-wrap:wrap;gap:10px}
+  .drop-zone{padding:32px 16px}
+  .op-item{padding:12px}
+  .live-log{height:160px}
+  .timeout-modal{padding:24px 20px}
+  .timeout-modal .flex{flex-wrap:wrap}
+
+  /* 16px inputs stop iPhones from zooming in when a field is tapped */
+  .form-input,.form-select,textarea{font-size:16px}
+  .form-check input{width:18px;height:18px;margin-top:1px}
+
+  /* Help: menu becomes a horizontal chip row above the article */
+  .help-layout{flex-direction:column;gap:14px!important}
+  .help-nav{width:auto!important;display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+  .help-nav button{width:auto!important;white-space:nowrap;flex-shrink:0;margin:0!important;border:1px solid var(--gray-200)!important}
+  .help-body{padding-left:0!important;border-left:none!important}
+}

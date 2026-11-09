@@ -236,13 +236,15 @@ export default function Register() {
                 checked={form.agree}
                 onChange={handleChange('agree')}
               />
-              I agree to the{' '}
-              <span className="link" onClick={(e) => { e.preventDefault(); openLegal('terms'); }}>
-                Terms of Service
-              </span>
-              {' '}and{' '}
-              <span className="link" onClick={(e) => { e.preventDefault(); openLegal('privacy'); }}>
-                Privacy Policy
+              <span>
+                I agree to the{' '}
+                <span className="link" onClick={(e) => { e.preventDefault(); openLegal('terms'); }}>
+                  Terms of Service
+                </span>
+                {' '}and{' '}
+                <span className="link" onClick={(e) => { e.preventDefault(); openLegal('privacy'); }}>
+                  Privacy Policy
+                </span>
               </span>
             </label>
             {fieldError('agree') && (

@@ -7,10 +7,35 @@ import {
   Home, PlayCircle, BarChart2, Settings, Clock, Save, HelpCircle,
   TrendingUp, History, GitCompare,
   User, Shield, Info, CheckCircle, XCircle, AlertTriangle, X,
-  ChevronLeft, ChevronRight, LogOut,
+  ChevronLeft, ChevronRight, LogOut, Menu,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
+
+// ── Mobile layout helpers ─────────────────────────────────────────
+// Below 768px the sidebar becomes a slide-out drawer opened from the page header.
+const MOBILE_QUERY = '(max-width: 768px)';
+export function useIsMobile() {
+  const get = () => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches;
+  const [isMobile, setIsMobile] = useState(get);
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_QUERY);
+    const onChange = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isMobile;
+}
+const MobileNavCtx = createContext({ open: false, setOpen: () => {} });
+export const useMobileNav = () => useContext(MobileNavCtx);
+export function MobileMenuButton() {
+  const { setOpen } = useMobileNav();
+  return (
+    <button className="hdr-menu-btn" aria-label="Open menu" onClick={() => setOpen(true)}>
+      <Menu size={20} />
+    </button>
+  );
+}
 
 // ── Logo ──────────────────────────────────────────────────────────
 export const LogoMark = ({ size = 36 }) => (
@@ -63,6 +88,8 @@ export function LegalModalProvider({ children }) {
             .legal-close{background:none;border:none;font-size:24px;line-height:1;
               cursor:pointer;color:var(--gray-500)}
             @media (max-width:900px){ .legal-overlay{left:0} }
+            @media (max-width:560px){ .legal-overlay{padding:12px} .legal-modal{max-height:92vh}
+              .legal-modal-head,.legal-modal-body,.legal-modal-foot{padding-left:16px;padding-right:16px} }
           `}</style>
           <div className="legal-overlay" role="dialog" aria-modal="true"
             aria-label={legal === 'terms' ? 'Terms of Service' : 'Privacy Policy'}
@@ -138,11 +165,18 @@ export function Sidebar() {
   const nav = useNavigate();
   const loc = useLocation();
   const { user, signOut } = useAuth();
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === 'true');
+  const isMobile = useIsMobile();
+  const { open: drawerOpen, setOpen: setDrawerOpen } = useMobileNav();
+  const [collapsedPref, setCollapsedPref] = useState(() => localStorage.getItem('sidebar_collapsed') === 'true');
+  // The drawer on phones always shows full labels; collapsing only applies on larger screens
+  const collapsed = !isMobile && collapsedPref;
+
+  // Close the drawer after navigating, and when the screen grows past the phone breakpoint
+  useEffect(() => { setDrawerOpen(false); }, [loc.pathname, isMobile]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCollapsed = (val) => {
-    const next = typeof val === 'boolean' ? val : !collapsed;
-    setCollapsed(next);
+    const next = typeof val === 'boolean' ? val : !collapsedPref;
+    setCollapsedPref(next);
     localStorage.setItem('sidebar_collapsed', String(next));
   };
 
@@ -159,7 +193,7 @@ export function Sidebar() {
   const w = collapsed ? 60 : 240;
 
   return (
-    <div style={{
+    <div className={`app-sidebar${drawerOpen ? ' open' : ''}`} style={{
       width: w, minWidth: w, background: '#fff',
       borderRight: '1px solid var(--gray-200)',
       display: 'flex', flexDirection: 'column', flexShrink: 0,
@@ -181,6 +215,11 @@ export function Sidebar() {
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-900)' }}>IMPT</div>
             <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 1 }}>Mutation Prioritization Tool</div>
           </div>
+        )}
+        {isMobile && (
+          <button className="sidebar-close" aria-label="Close menu" onClick={() => setDrawerOpen(false)}>
+            <X size={18} />
+          </button>
         )}
       </div>
 
@@ -251,7 +290,7 @@ export function Sidebar() {
             onClick={() => { signOut(); nav('/login'); }}>
             Sign out
           </button>
-          <button onClick={() => toggleCollapsed(true)}
+          <button className="sidebar-desktop-only" onClick={() => toggleCollapsed(true)}
             style={{ marginTop: 8, width: '100%', background: 'none', border: 'none',
               cursor: 'pointer', color: 'var(--gray-400)', fontSize: 12,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '4px 0' }}>
@@ -262,6 +301,11 @@ export function Sidebar() {
             fontSize: 11, color: 'var(--gray-400)' }}>
             <NovaSoftMark size={16} />
             <span>Built by <strong style={{ color: 'var(--gray-600)', fontWeight: 600 }}>NovaSoft</strong></span>
+          </div>
+          {/* Phones hide the floating Privacy/Terms bar, so the links live in the drawer */}
+          <div className="sidebar-mobile-only" style={{ justifyContent: 'center', gap: 14, marginTop: 8, fontSize: 11 }}>
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gray-400)' }}>Privacy Policy</a>
+            <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gray-400)' }}>Terms of Service</a>
           </div>
         </div>
       )}
@@ -293,10 +337,13 @@ export function Sidebar() {
 export function AppShell({ children }) {
   const { user, showTimeout, extendSession, countdown, signOut } = useAuth();
   const nav = useNavigate();
+  const [navOpen, setNavOpen] = useState(false);
 
   return (
+    <MobileNavCtx.Provider value={{ open: navOpen, setOpen: setNavOpen }}>
     <div className="app-shell">
       <Sidebar />
+      {navOpen && <div className="mobile-nav-backdrop" onClick={() => setNavOpen(false)} />}
       <div className="main-area">
         {/* FR050 — Email verification banner */}
         {user && !user.is_verified && <VerifyBanner email={user.email} />}
@@ -319,7 +366,7 @@ export function AppShell({ children }) {
       )}
 
       {/* NFR072 — Privacy/Terms footer links accessible from all pages */}
-      <div style={{ position:'fixed', bottom:0, right:0, padding:'4px 12px',
+      <div className="legal-float" style={{ position:'fixed', bottom:0, right:0, padding:'4px 12px',
         fontSize:10, color:'var(--gray-400)', display:'flex', gap:12, zIndex:5,
         background:'rgba(255,255,255,.8)', backdropFilter:'blur(4px)',
         borderTop:'1px solid var(--gray-100)', borderLeft:'1px solid var(--gray-100)',
@@ -334,6 +381,7 @@ export function AppShell({ children }) {
           onMouseOut={e=>e.target.style.color='var(--gray-400)'}>Terms of Service</a>
       </div>
     </div>
+    </MobileNavCtx.Provider>
   );
 }
 
@@ -379,6 +427,7 @@ export function PageHeader({ icon, title, right }) {
   return (
     <div className="page-header">
       <div className="page-header-left">
+        <MobileMenuButton />
         {icon && <span style={{ fontSize: 20 }}>{icon}</span>}
         <span className="page-title">{title}</span>
       </div>
@@ -397,7 +446,8 @@ export function WizardHeader({ title, step, totalSteps, stepLabel, right }) {
     <>
       <div className="page-header">
         <div className="page-header-left">
-          <PlayCircle size={20} style={{ color: '#fff' }} />
+          <MobileMenuButton />
+          <PlayCircle size={20} style={{ color: '#fff', flexShrink: 0 }} />
           <span className="page-title">{title}</span>
         </div>
         <div className="page-header-right">{right}</div>

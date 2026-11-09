@@ -246,8 +246,8 @@ export default function Help() {
     <AppShell>
       <PageHeader icon="❓" title="Help & Documentation" />
       <div className="page-content">
-        <div className="flex" style={{ gap:24 }}>
-          <div style={{ width:200, flexShrink:0 }}>
+        <div className="flex help-layout" style={{ gap:24 }}>
+          <div className="help-nav" style={{ width:200, flexShrink:0 }}>
             {sections.map(s => (
               <button key={s.id} onClick={() => setActive(s.id)}
                 style={{ display:'block', width:'100%', textAlign:'left', padding:'8px 12px',
@@ -259,7 +259,7 @@ export default function Help() {
               </button>
             ))}
           </div>
-          <div style={{ flex:1, paddingLeft:24, borderLeft:'1px solid var(--gray-200)' }}>
+          <div className="help-body" style={{ flex:1, minWidth:0, paddingLeft:24, borderLeft:'1px solid var(--gray-200)' }}>
             <h2 style={{ fontSize:20, fontWeight:700, marginBottom:16 }}>
               {sections.find(s => s.id === active)?.label}
             </h2>

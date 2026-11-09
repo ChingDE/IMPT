@@ -375,7 +375,7 @@ export function AdminConfig() {
                 <tr key={c.key}>
                   <td style={{fontWeight:600}}>{c.key.replace(/_/g,' ').replace(/\b\w/g,x=>x.toUpperCase())}</td>
                   <td>
-                    <input className="form-input" style={{height:32,fontSize:13}}
+                    <input className="form-input" style={{height:32,fontSize:13,minWidth:110}}
                       value={edits[c.key]??c.value}
                       onChange={e=>setEdits(ed=>({...ed,[c.key]:e.target.value}))} />
                   </td>

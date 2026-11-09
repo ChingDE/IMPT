@@ -538,7 +538,7 @@ td{padding:6px 12px;border-bottom:1px solid #e5e7eb}footer{margin-top:40px;font-
                     {expandedIds.has(m.id) && (
                       <tr key={`${m.id}-detail`}>
                         <td colSpan={7} style={{background:'var(--gray-50)',padding:'12px 16px'}}>
-                          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                          <div className="m-stack" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                             <div>
                               <div style={{fontSize:11,fontWeight:600,color:'var(--gray-500)',marginBottom:4}}>Original Code</div>
                               <pre style={{background:'#F0FDF4',border:'1px solid var(--green-light)',borderRadius:6,padding:'8px 12px',fontSize:12,fontFamily:'var(--mono)',overflow:'auto',margin:0,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>

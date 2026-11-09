@@ -153,7 +153,7 @@ export default function Reports() {
       <div className="page-content">
 
         {/* Summary stats */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:24 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:16, marginBottom:24 }}>
           {[
             { label:'Total Tests Run',    value:total_tests,  color:'var(--purple-mid)', suffix:'' },
             { label:'Avg Mutation Score', value:`${avg_score}%`, color:'var(--green)',  suffix:'' },
@@ -240,7 +240,7 @@ export default function Reports() {
         {/* Score distribution */}
         <div className="card mb-4">
           <div className="card-title" style={{ marginBottom:16 }}>📊 Mutation Score Distribution</div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:32, alignItems:'start' }}>
+          <div className="m-stack" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:32, alignItems:'start' }}>
             <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
               {[
                 { label:'Excellent (85–100%)', key:'excellent', color:'#16a34a' },

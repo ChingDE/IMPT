@@ -175,7 +175,7 @@ export default function CompareResults() {
             </div>
 
             {/* Metric cards */}
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12, marginBottom:24 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:12, marginBottom:24 }}>
               <MetricCard label="Mutation Score" a={mA.score.toFixed(1)} b={mB.score.toFixed(1)} unit="%" better="high"
                 note={Math.abs(mA.score - mB.score) < 1 ? 'Virtually identical' :
                   `${Math.abs(mA.score - mB.score).toFixed(1)}pp difference`} />
