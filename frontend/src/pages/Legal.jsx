@@ -9,7 +9,7 @@ const Wrap = ({ title, children }) => {
         padding:'40px 48px', boxShadow:'0 2px 16px rgba(0,0,0,.06)' }}>
         <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:32,
           paddingBottom:20, borderBottom:'1px solid var(--gray-200)' }}>
-          <img src="/logo.png" alt="IMPT" style={{ width:36, height:36, objectFit:'contain' }} />
+          <img src="/impt-logo.png" alt="IMPT logo" style={{ width:44, height:44, objectFit:'contain' }} />
           <div>
             <div style={{ fontSize:22, fontWeight:800, color:'var(--purple-mid)' }}>IMPT</div>
             <div style={{ fontSize:12, color:'var(--gray-400)' }}>NovaSoft · FEU Institute of Technology</div>
@@ -21,9 +21,13 @@ const Wrap = ({ title, children }) => {
         </p>
         {children}
         <div style={{ marginTop:40, paddingTop:20, borderTop:'1px solid var(--gray-200)',
-          display:'flex', gap:16 }}>
+          display:'flex', alignItems:'center', gap:16, flexWrap:'wrap' }}>
           <button className="btn btn-secondary btn-sm" onClick={()=>nav(-1)}>← Go Back</button>
           <button className="btn btn-secondary btn-sm" onClick={()=>nav('/login')}>Login</button>
+          <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:10 }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--gray-400)' }}>Developed by</span>
+            <img src="/novasoft-banner.png" alt="NovaSoft — Innovation Software" style={{ height:40, width:'auto' }} />
+          </div>
         </div>
       </div>
     </div>
@@ -166,7 +170,10 @@ export function MaintenancePage() {
   return (
     <div style={{ minHeight:'100vh', background:'var(--purple-mid)', display:'grid', placeItems:'center', padding:20 }}>
       <div style={{ textAlign:'center', color:'#fff' }}>
-        <img src="/logo.png" alt="IMPT" style={{ width:64, height:64, objectFit:'contain', marginBottom:24, opacity:.9 }} />
+        <div style={{ width:104, height:104, borderRadius:'50%', background:'#fff', display:'grid',
+          placeItems:'center', margin:'0 auto 24px', boxShadow:'0 4px 18px rgba(0,0,0,.18)' }}>
+          <img src="/impt-logo.png" alt="IMPT logo" style={{ width:80, height:80, objectFit:'contain' }} />
+        </div>
         <h1 style={{ fontSize:32, fontWeight:800, marginBottom:12 }}>Under Maintenance</h1>
         <p style={{ fontSize:16, opacity:.85, maxWidth:420, margin:'0 auto 24px', lineHeight:1.65 }}>
           IMPT is temporarily unavailable for scheduled maintenance. We'll be back shortly.

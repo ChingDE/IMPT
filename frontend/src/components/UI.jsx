@@ -14,7 +14,15 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 
 // ── Logo ──────────────────────────────────────────────────────────
 export const LogoMark = ({ size = 36 }) => (
-  <img src="/logo.png" alt="IMPT Logo" style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }} />
+  <img src="/impt-logo.png" alt="IMPT logo" style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }} />
+);
+
+// NovaSoft team credit: the compact mark (sidebar) and the full banner (auth pages, legal pages)
+export const NovaSoftMark = ({ size = 18 }) => (
+  <img src="/novasoft-mark.png" alt="NovaSoft logo" style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }} />
+);
+export const NovaSoftBanner = ({ height = 44 }) => (
+  <img src="/novasoft-banner.png" alt="NovaSoft — Innovation Software" style={{ height, width: 'auto', display: 'block' }} />
 );
 
 // Left brand panel for the auth pages (split layout). The dashboard screenshot
@@ -81,6 +89,19 @@ export function LegalModalProvider({ children }) {
 export function AuthAside() {
   const { openLegal } = useLegalModal();
   return (
+    <>
+    {/* Phones: the aside is hidden, so show a slim brand bar above the form instead */}
+    <div className="auth-mobile-brand">
+      <div className="auth-mobile-brand-impt">
+        <LogoMark size={36} />
+        <span>IMPT</span>
+      </div>
+      <div className="auth-mobile-brand-credit">
+        <span>Built by</span>
+        <NovaSoftMark size={18} />
+        <strong>NovaSoft</strong>
+      </div>
+    </div>
     <aside className="auth-aside">
       <div className="auth-aside-top">
         <LogoMark size={56} />
@@ -97,13 +118,18 @@ export function AuthAside() {
         </p>
       </div>
       <div className="auth-aside-footer">
-        <span>NovaSoft · FEU Institute of Technology · 2025–2026</span>
+        <div className="auth-aside-credit">
+          <span className="auth-aside-credit-label">Built by</span>
+          <NovaSoftBanner height={46} />
+          <span className="auth-aside-credit-org">FEU Institute of Technology · 2025–2026</span>
+        </div>
         <span className="auth-aside-links">
           <a href="#" onClick={(e) => { e.preventDefault(); openLegal('privacy'); }}>Privacy</a>
           <a href="#" onClick={(e) => { e.preventDefault(); openLegal('terms'); }}>Terms</a>
         </span>
       </div>
     </aside>
+    </>
   );
 }
 
@@ -153,7 +179,7 @@ export function Sidebar() {
         {!collapsed && (
           <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-900)' }}>IMPT</div>
-            <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 1 }}>NovaSoft · FEU Tech</div>
+            <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 1 }}>Mutation Prioritization Tool</div>
           </div>
         )}
       </div>
@@ -231,6 +257,12 @@ export function Sidebar() {
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '4px 0' }}>
             <ChevronLeft size={13} /> Collapse
           </button>
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--gray-100)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            fontSize: 11, color: 'var(--gray-400)' }}>
+            <NovaSoftMark size={16} />
+            <span>Built by <strong style={{ color: 'var(--gray-600)', fontWeight: 600 }}>NovaSoft</strong></span>
+          </div>
         </div>
       )}
       {collapsed && (
@@ -248,6 +280,9 @@ export function Sidebar() {
               color: 'var(--gray-400)', padding: '4px', display: 'flex', alignItems: 'center' }}>
             <ChevronRight size={15} />
           </button>
+          <span title="Built by NovaSoft" style={{ display: 'flex', marginTop: 4 }}>
+            <NovaSoftMark size={20} />
+          </span>
         </div>
       )}
     </div>
